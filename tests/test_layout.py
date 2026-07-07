@@ -1,6 +1,6 @@
 """layout 테스트: 꼬리말 분리(위치+보조 조건), 제목 분류, 문단 감지."""
-from img2txt.layout import split_footer
-from img2txt.ocr import OcrLine
+from img2txt.layout import PageLayout, analyze_page, split_footer
+from img2txt.ocr import OcrLine, Page
 
 
 def _line(
@@ -40,3 +40,44 @@ def test_no_footer_candidates_keeps_all() -> None:
     body, footer = split_footer(lines, footer_band=0.08, footer_max_width_ratio=0.60)
     assert len(body) == 2
     assert footer == []
+
+
+_KW = dict(footer_band=0.08, footer_max_width_ratio=0.60, indent_min=0.015, title_height_ratio=1.40)
+
+
+def test_title_line_is_independent_paragraph() -> None:
+    page = Page(number=2, lines=[
+        _line("훌륭한 투자자는", 0.90, height=0.040),
+        _line("1983년", 0.88, x=0.125, height=0.020),
+        _line("트레이더를", 0.85, x=0.140, height=0.020),
+    ])
+    layout = analyze_page(page, **_KW)
+    assert layout.paragraphs == ["훌륭한 투자자는", "1983년", "트레이더를"]
+
+
+def test_consecutive_body_lines_grouped() -> None:
+    page = Page(number=2, lines=[
+        _line("이 책의", 0.90, height=0.020),
+        _line("저자이면서", 0.88, height=0.020),
+        _line("전설의 펀드매니저인", 0.86, height=0.020),
+    ])
+    layout = analyze_page(page, **_KW)
+    assert layout.paragraphs == ["이 책의 저자이면서 전설의 펀드매니저인"]
+
+
+def test_empty_page() -> None:
+    page = Page(number=2, lines=[])
+    layout = analyze_page(page, **_KW)
+    assert layout.is_empty is True
+    assert layout.paragraphs == []
+
+
+def test_footer_separation() -> None:
+    page = Page(number=2, lines=[
+        _line("본문 내용", 0.50),
+        _line("2", 0.03, width=0.30),
+    ])
+    layout = analyze_page(page, **_KW)
+    assert layout.paragraphs == ["본문 내용"]
+    assert len(layout.footer_lines) == 1
+    assert layout.footer_lines[0].text == "2"

@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import logging
+import statistics
+from dataclasses import dataclass, field
 
-from img2txt.ocr import OcrLine
+from img2txt.ocr import OcrLine, Page
 
 logger = logging.getLogger(__name__)
 
@@ -57,3 +59,55 @@ def split_footer(
             body.append(line)
 
     return body, footer
+
+
+@dataclass
+class PageLayout:
+    """레이아웃 분석이 끝난 페이지: 꼬리말 제거 + 페이지 내 문단 복원 결과."""
+
+    number: int
+    paragraphs: list[str]
+    first_is_continuation: bool
+    footer_lines: list[OcrLine] = field(default_factory=list)
+    is_empty: bool = False
+
+
+def analyze_page(
+    page: Page,
+    footer_band: float = FOOTER_BAND,
+    footer_max_width_ratio: float = FOOTER_MAX_WIDTH_RATIO,
+    indent_min: float = INDENT_MIN,
+    title_height_ratio: float = TITLE_HEIGHT_RATIO,
+) -> PageLayout:
+    """페이지 하나를 분석한다: 꼬리말 제거, 제목 분류, 문단 그룹화 (스펙 규칙 2~4, 6)."""
+    if not page.lines:
+        return PageLayout(page.number, [], False, [], is_empty=True)
+    body, footer = split_footer(page.lines, footer_band, footer_max_width_ratio)
+    if not footer:
+        logger.warning("페이지 %d: 꼬리말 후보 미감지, 제거 생략", page.number)
+    if not body:
+        return PageLayout(page.number, [], False, footer, is_empty=True)
+
+    median_height = statistics.median(line.height for line in body)
+    title_flags = [line.height > median_height * title_height_ratio for line in body]
+    # 여백 추정에 제목이 섞이면 기준이 왜곡된다 (스펙 규칙 3) — 제목 제외 최소 x
+    non_title_x = [line.x for line, is_title in zip(body, title_flags) if not is_title]
+    margin_x = min(non_title_x) if non_title_x else body[0].x
+
+    paragraphs: list[str] = []
+    current: list[str] = []
+    current_is_title = False
+    first_is_continuation = False
+    for index, (line, is_title) in enumerate(zip(body, title_flags)):
+        starts_new = is_title or line.x >= margin_x + indent_min
+        if index == 0:
+            first_is_continuation = not starts_new
+        elif (starts_new and not (is_title and current_is_title)) or (is_title != current_is_title):
+            # 문단 시작이거나 제목<->본문 전환이면 현재 문단을 닫는다.
+            # 연속된 제목 줄(두 줄짜리 장 제목)은 하나의 제목 문단으로 합친다.
+            paragraphs.append(" ".join(current))
+            current = []
+        current.append(line.text)
+        current_is_title = is_title
+    paragraphs.append(" ".join(current))
+    return PageLayout(page.number, paragraphs, first_is_continuation, footer, is_empty=False)
