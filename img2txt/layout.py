@@ -37,20 +37,10 @@ def split_footer(
     footer_band: float = FOOTER_BAND,
     footer_max_width_ratio: float = FOOTER_MAX_WIDTH_RATIO,
 ) -> tuple[list[OcrLine], list[OcrLine]]:
-    """줄 목록을 본문과 꼬리말로 분리.
+    """줄 목록을 (본문, 꼬리말)로 나눈다 (스펙 규칙 2).
 
-    규칙:
-    - 띠에 걸친 줄(y_center < footer_band)중 숫자를 포함하거나
-      본문 최대 폭 대비 폭이 footer_max_width_ratio 이하인 줄 = 꼬리말
-    - 규칙 실패는 허용, 본문 오삭제는 불허.
-
-    Args:
-        lines: 입력 줄 목록.
-        footer_band: 꼬리말 y_center 상한값.
-        footer_max_width_ratio: 꼬리말 판정을 위한 폭 비율.
-
-    Returns:
-        (본문 줄 목록, 꼬리말 줄 목록).
+    꼬리말 = 최하단 띠 안 + (숫자 포함 또는 본문 대비 짧은 폭).
+    보조 조건 탓에 꼬리말이 남는 실패는 허용, 본문 오삭제는 불허.
     """
     band_outside_widths = [l.width for l in lines if l.y_center >= footer_band]
     max_body_width = max(band_outside_widths, default=0.0)
@@ -59,7 +49,7 @@ def split_footer(
 
     for line in lines:
         in_band = line.y_center < footer_band
-        is_short = max_body_width and line.width < max_body_width * footer_max_width_ratio
+        is_short = max_body_width > 0.0 and line.width < max_body_width * footer_max_width_ratio
 
         if in_band and (_contains_digit(line.text) or is_short):
             footer.append(line)
