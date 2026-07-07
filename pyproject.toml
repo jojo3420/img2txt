@@ -1,0 +1,5 @@
+[tool.pytest.ini_options]
+pythonpath = ["."]
+markers = [
+    "macos: macOS 전용 실제 OCR 통합 테스트 (CI 제외 가능)",
+]
