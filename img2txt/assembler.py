@@ -1,4 +1,4 @@
-"""페이지 텍스트 병합: 레이아웃 문단을 하나의 본문으로 결합, 빈 페이지 표시."""
+"""페이지 레이아웃 목록 -> 문단이 복원된 연속본 텍스트."""
 from __future__ import annotations
 
 import logging
@@ -13,34 +13,21 @@ LINE_JOINT: str = " "
 
 
 def assemble(layouts: list[PageLayout]) -> str:
-    """레이아웃 목록을 연결한 최종 본문 반환.
+    """페이지들을 이어 연속본을 만든다 (스펙 규칙 5~6).
 
-    규칙:
-    - 각 페이지의 문단을 PARAGRAPH_SEPARATOR(\\n\\n)로 결합
-    - 빈 페이지는 [페이지 N 누락] 표식 삽입, 다음 페이지는 새로 시작 (병합 금지)
-    - 전체 페이지 목록을 PARAGRAPH_SEPARATOR로 통합
-
-    Args:
-        layouts: 페이지별 레이아웃 목록
-
-    Returns:
-        최종 본문 텍스트
+    직전 페이지가 누락(빈/실패)이면 병합하지 않고 표식을 남긴다.
     """
     paragraphs: list[str] = []
-    previous_missing: bool = False
-
+    previous_missing = False
     for layout in layouts:
-        # 빈 페이지 처리
         if layout.is_empty:
             logger.warning("페이지 %d: 빈 페이지, 누락 표식 삽입", layout.number)
             paragraphs.append(MISSING_PAGE_MARKER_FORMAT.format(number=layout.number))
             previous_missing = True
-        else:
-            # 이전 페이지가 누락되었으면 새 페이지는 병합하지 않음
-            if previous_missing:
-                previous_missing = False
-            # 현재 페이지의 문단들을 연결
-            page_paragraphs = PARAGRAPH_SEPARATOR.join(layout.paragraphs)
-            paragraphs.append(page_paragraphs)
-
+            continue
+        page_paragraphs = list(layout.paragraphs)
+        if layout.first_is_continuation and paragraphs and not previous_missing:
+            paragraphs[-1] = paragraphs[-1] + LINE_JOINT + page_paragraphs.pop(0)
+        paragraphs.extend(page_paragraphs)
+        previous_missing = False
     return PARAGRAPH_SEPARATOR.join(paragraphs)
