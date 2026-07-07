@@ -47,37 +47,38 @@ _KW = dict(footer_band=0.08, footer_max_width_ratio=0.60, indent_min=0.015, titl
 
 def test_title_line_is_independent_paragraph() -> None:
     page = Page(number=2, lines=[
-        _line("훌륭한 투자자는", 0.90, height=0.040),
-        _line("1983년", 0.88, x=0.125, height=0.020),
-        _line("트레이더를", 0.85, x=0.140, height=0.020),
+        _line("훌륭한 투자자는", 0.90, height=0.040),        # 제목 (본문의 2배 높이)
+        _line("1983년 미국의 한 일간지", 0.80),               # 본문 (들여쓰기 없음)
+        _line("트레이더를 모집한다는", 0.75),
     ])
     layout = analyze_page(page, **_KW)
-    assert layout.paragraphs == ["훌륭한 투자자는", "1983년", "트레이더를"]
+    assert layout.paragraphs == ["훌륭한 투자자는", "1983년 미국의 한 일간지 트레이더를 모집한다는"]
+    assert layout.first_is_continuation is False   # 제목으로 시작 = 병합 대상 아님
 
 
-def test_consecutive_body_lines_grouped() -> None:
-    page = Page(number=2, lines=[
-        _line("이 책의", 0.90, height=0.020),
-        _line("저자이면서", 0.88, height=0.020),
-        _line("전설의 펀드매니저인", 0.86, height=0.020),
+def test_indented_line_starts_new_paragraph() -> None:
+    page = Page(number=5, lines=[
+        _line("앞 문단 마지막 줄이다.", 0.90),
+        _line("새 문단 첫 줄이다", 0.85, x=0.13),            # 들여쓰기(0.10+0.015 이상)
+        _line("이어지는 둘째 줄이다.", 0.80),
     ])
     layout = analyze_page(page, **_KW)
-    assert layout.paragraphs == ["이 책의 저자이면서 전설의 펀드매니저인"]
+    assert layout.paragraphs == ["앞 문단 마지막 줄이다.", "새 문단 첫 줄이다 이어지는 둘째 줄이다."]
 
 
-def test_empty_page() -> None:
-    page = Page(number=2, lines=[])
+def test_page_starting_mid_sentence_is_continuation() -> None:
+    page = Page(number=3, lines=[
+        _line("주겨다는 약속을 지켰다.", 0.90),               # 들여쓰기 없음 = 이전 페이지에서 이어짐
+        _line("다음 내용이 계속된다.", 0.85),
+    ])
     layout = analyze_page(page, **_KW)
+    assert layout.first_is_continuation is True
+    assert layout.paragraphs == ["주겨다는 약속을 지켰다. 다음 내용이 계속된다."]
+
+
+def test_footer_removed_and_empty_page_flagged() -> None:
+    footer_only = Page(number=9, lines=[_line("23", 0.03, width=0.05)])
+    layout = analyze_page(footer_only, **_KW)
     assert layout.is_empty is True
-    assert layout.paragraphs == []
-
-
-def test_footer_separation() -> None:
-    page = Page(number=2, lines=[
-        _line("본문 내용", 0.50),
-        _line("2", 0.03, width=0.30),
-    ])
-    layout = analyze_page(page, **_KW)
-    assert layout.paragraphs == ["본문 내용"]
-    assert len(layout.footer_lines) == 1
-    assert layout.footer_lines[0].text == "2"
+    empty = Page(number=11, lines=[])
+    assert analyze_page(empty, **_KW).is_empty is True
