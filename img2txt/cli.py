@@ -9,6 +9,7 @@ from pathlib import Path
 from img2txt.assembler import assemble
 from img2txt.corrector import (
     OLLAMA_BASE_URL,
+    CorrectionStatus,
     all_requests_failed,
     check_server,
     correct_paragraphs,
@@ -38,10 +39,10 @@ def build_parser() -> argparse.ArgumentParser:
     convert.add_argument("input_dir", help="jpg/jpeg가 있는 폴더")
     convert.add_argument("-o", "--output", default=DEFAULT_OUTPUT_DIR, help="출력 폴더")
     convert.add_argument("-v", "--verbose", action="store_true", help="DEBUG 로그")
-    correct = subparsers.add_parser("correct", help="txt 파일 OCR 오류 보정 (Ollama)")
-    correct.add_argument("input_file", help="보정할 txt 파일")
-    correct.add_argument("-o", "--output", default=DEFAULT_OUTPUT_DIR, help="출력 폴더")
-    correct.add_argument("--model", default=DEFAULT_MODEL, help=f"Ollama 모델명 (기본값: {DEFAULT_MODEL})")
+    correct = subparsers.add_parser("correct", help="연속본 txt -> LLM 보정본")
+    correct.add_argument("input_file", help="convert가 만든 연속본 txt (book.txt 등)")
+    correct.add_argument("--model", default=DEFAULT_MODEL, help="Ollama 모델명")
+    correct.add_argument("-o", "--output", default=None, help="출력 폴더 (기본: 입력 파일 폴더)")
     correct.add_argument("-v", "--verbose", action="store_true", help="DEBUG 로그")
     return parser
 
@@ -91,32 +92,35 @@ def run_convert(args: argparse.Namespace) -> int:
 
 
 def run_correct(args: argparse.Namespace) -> int:
-    """correct 흐름: 입력 검증 -> 서버 점검 -> 문단 분할 -> 보정 -> 결과 쓰기."""
+    """correct 흐름: 사전 점검 -> 문단 분리 -> 보정 -> 보정본 + 로그 쓰기."""
     input_path = Path(args.input_file)
     if not input_path.is_file():
         logger.error("입력 파일이 없습니다: %s", input_path)
         return EXIT_ERROR
+    output_dir = Path(args.output) if args.output else input_path.parent
 
-    output_dir = Path(args.output)
     error_message = check_server(OLLAMA_BASE_URL, args.model)
     if error_message:
         logger.error(error_message)
         return EXIT_ERROR
 
     text = input_path.read_text(encoding="utf-8")
-    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+    paragraphs = [p for p in text.split("\n\n") if p.strip()]
     corrected, records = correct_paragraphs(paragraphs, model=args.model)
 
     if all_requests_failed(records):
-        logger.error("전체 보정 요청이 실패했습니다.")
+        logger.error("전체 문단 보정 요청이 실패했습니다 (정상 응답 0건). Ollama 상태를 확인하세요.")
         return EXIT_ERROR
 
     write_text_file(output_dir / CORRECTED_FILENAME, "\n\n".join(corrected))
     write_text_file(output_dir / CORRECTIONS_LOG_FILENAME, format_corrections_log(records))
 
+    counts = {status: sum(1 for r in records if r.status is status) for status in CorrectionStatus}
     logger.info(
-        "완료: %d개 문단 보정 -> %s, %s",
-        len(records), output_dir / CORRECTED_FILENAME, output_dir / CORRECTIONS_LOG_FILENAME,
+        "완료: 보정 %d / 유지 %d / 가드 차단 %d / 실패 %d / 긴 문단 생략 %d -> %s",
+        counts[CorrectionStatus.CORRECTED], counts[CorrectionStatus.KEPT],
+        counts[CorrectionStatus.GUARD_BLOCKED], counts[CorrectionStatus.FAILED],
+        counts[CorrectionStatus.SKIPPED_LONG], output_dir / CORRECTED_FILENAME,
     )
     return EXIT_OK
 
