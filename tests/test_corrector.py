@@ -1,9 +1,11 @@
 """corrector 테스트: 길이 가드(비율+절대 하한), 폴백, 긴 문단 생략, 기록. HTTP는 모킹."""
 from img2txt.corrector import (
+    CorrectionRecord,
     CorrectionStatus,
     all_requests_failed,
     correct_paragraphs,
 )
+from img2txt.writer import format_corrections_log
 
 
 def test_normal_correction_applied() -> None:
@@ -65,3 +67,17 @@ def test_all_requests_failed_detection() -> None:
     fake = lambda base_url, model, paragraph: paragraph
     _, ok_records = correct_paragraphs(["a"], model="m", request=fake)
     assert all_requests_failed(ok_records) is False
+
+
+def test_corrections_log_includes_changes_only() -> None:
+    records = [
+        CorrectionRecord(1, CorrectionStatus.KEPT, "변경 없음", "m", "그대로", "그대로"),
+        CorrectionRecord(2, CorrectionStatus.CORRECTED, "텍스트 변경", "m", "경단로", "결단코"),
+        CorrectionRecord(3, CorrectionStatus.FAILED, "타임아웃", "m", "원문", "원문"),
+    ]
+    log_text = format_corrections_log(records)
+    assert "[문단 1]" not in log_text          # 변경 없는 문단은 기록하지 않음 (스펙 규칙 12)
+    assert "[문단 2] 상태=보정 모델=m 사유=텍스트 변경" in log_text
+    assert "--- 전 ---\n경단로" in log_text
+    assert "--- 후 ---\n결단코" in log_text
+    assert "[문단 3] 상태=실패" in log_text
