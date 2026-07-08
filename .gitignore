@@ -1,3 +1,6 @@
 .venv/
 output/
+output_formal/
 __pycache__/
+.omc/
+.serena/
