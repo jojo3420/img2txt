@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 
+from img2txt.backends.base import CorrectionBackend
 from img2txt.corrector import request_correction
 
 logger = logging.getLogger(__name__)
@@ -10,7 +11,7 @@ logger = logging.getLogger(__name__)
 OLLAMA_BASE_URL: str = "http://localhost:11434"
 
 
-class OllamaBackend:
+class OllamaBackend(CorrectionBackend):
     """로컬 Ollama /api/chat 기반 보정."""
 
     def __init__(self, base_url: str = OLLAMA_BASE_URL) -> None:
