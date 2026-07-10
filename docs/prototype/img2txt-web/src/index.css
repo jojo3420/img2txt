@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply antialiased;
+  }
+  body {
+    @apply font-sans text-zinc-900 dark:text-zinc-100 bg-white dark:bg-zinc-950;
+  }
+  ::selection {
+    @apply bg-accent-100 dark:bg-accent-700/40;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+  }
+}
