@@ -1,12 +1,9 @@
 """구독 CLI(claude, codex) 기반 보정 백엔드."""
 from __future__ import annotations
 
-import json
 import logging
 import os
-import shlex
 import subprocess
-from typing import Any
 
 from img2txt.backends.base import SEGMENT_HEADER, split_corrected_segments
 
@@ -16,9 +13,14 @@ DEFAULT_TIMEOUT_SEC: float = 120.0
 BATCH_SYSTEM_PROMPT: str = (
     "다음 문단 목록에서 오탈자와 띄어쓰기만 교정한다. "
     "재작성, 추가, 삭제, 요약은 금지하고, 고칠 것이 없으면 원문 그대로이다. "
-    "각 문단마다 다음 헤더를 한 줄씩 먼저 출력하고, 그 아래 교정된 문단 텍스트만 출력하라:\n"
-    f"{SEGMENT_HEADER}\n"
-    "N은 입력 번호와 동일하고, 헤더 외에 설명, 요약, 기타 텍스트는 금지된다."
+    "각 문단마다 `===문단 1===`, `===문단 2===` 처럼 번호를 넣은 헤더를 한 줄 먼저 출력하고, "
+    "그 아래 교정된 문단 텍스트만 출력하라. 번호는 입력 번호와 동일하고, "
+    "헤더 외에 설명, 요약, 기타 텍스트는 금지된다."
+)
+SINGLE_SYSTEM_PROMPT: str = (
+    "다음 문단에서 오탈자와 띄어쓰기만 교정하고, "
+    "재작성, 추가, 삭제, 요약은 금지하다. "
+    "고칠 것이 없으면 원문 그대로 출력하고, 설명이나 기타 텍스트는 금지된다."
 )
 
 
@@ -46,7 +48,7 @@ class CliBackend:
 
         Raises:
             subprocess.TimeoutExpired: 타임아웃 시 자식 프로세스 kill 후 발생.
-            Exception: 기타 실행 오류.
+            RuntimeError: CLI 반환 코드 오류 또는 빈 출력.
         """
         if self.cli_name == "claude":
             cmd = ["claude", "-p", prompt]
@@ -63,8 +65,15 @@ class CliBackend:
                 timeout=self.timeout_sec,
                 env=os.environ.copy(),  # 환경 변수 전파
             )
+            # CLI 실패 처리
             if result.returncode != 0:
-                logger.warning("CLI 반환 코드 %d: %s", result.returncode, result.stderr)
+                stderr_preview = result.stderr[:200] if result.stderr else "(없음)"
+                raise RuntimeError(
+                    f"{self.cli_name} 반환 코드 {result.returncode}: {stderr_preview}"
+                )
+            # 빈 출력 처리
+            if not result.stdout.strip():
+                raise RuntimeError(f"{self.cli_name} 빈 응답")
             return result.stdout
         except subprocess.TimeoutExpired as error:
             logger.error("CLI 타임아웃 (%0.1f초), 프로세스 kill 및 재발생", self.timeout_sec)
@@ -118,8 +127,11 @@ class CliBackend:
         results: list[str] = []
         for i, paragraph in enumerate(paragraphs, start=1):
             try:
-                response = self._run_subprocess(paragraph)
-                results.append(response.strip())
+                prompt = f"{SINGLE_SYSTEM_PROMPT}\n\n{paragraph}"
+                response = self._run_subprocess(prompt)
+                # 빈 응답이면 원문 유지
+                stripped = response.strip()
+                results.append(stripped if stripped else paragraph)
             except Exception as error:
                 logger.warning("문단 %d 폴백 실패: %s", i, error)
                 results.append(paragraph)

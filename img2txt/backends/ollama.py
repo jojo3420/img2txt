@@ -37,7 +37,11 @@ class OllamaBackend(CorrectionBackend):
             logger.info("Ollama 보정 %d/%d", index, len(paragraphs))
             try:
                 corrected = request_correction(self.base_url, model, paragraph)
-                results.append(corrected)
+                # 빈 응답이면 원문 유지
+                if corrected and corrected.strip():
+                    results.append(corrected)
+                else:
+                    results.append(paragraph)
             except Exception as error:
                 logger.warning("문단 %d 보정 실패, 원문 유지: %s", index, error)
                 results.append(paragraph)

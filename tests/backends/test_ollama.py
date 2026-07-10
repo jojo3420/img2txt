@@ -41,3 +41,21 @@ def test_ollama_correct_batch_partial_failure() -> None:
         mock_req.side_effect = ["보정됨", Exception("error"), "보정됨"]
         result = backend.correct_batch(["원문1", "원문2", "원문3"], "qwen3:14b")
         assert result == ["보정됨", "원문2", "보정됨"]
+
+
+def test_ollama_correct_batch_empty_response() -> None:
+    """빈 응답 → 원문 유지."""
+    backend = OllamaBackend()
+    with patch("img2txt.backends.ollama.request_correction") as mock_req:
+        mock_req.side_effect = ["", "보정됨", ""]
+        result = backend.correct_batch(["원문1", "원문2", "원문3"], "qwen3:14b")
+        assert result == ["원문1", "보정됨", "원문3"]
+
+
+def test_ollama_correct_batch_whitespace_response() -> None:
+    """공백만 있는 응답 → 원문 유지."""
+    backend = OllamaBackend()
+    with patch("img2txt.backends.ollama.request_correction") as mock_req:
+        mock_req.side_effect = ["   ", "보정됨", "\n\n"]
+        result = backend.correct_batch(["원문1", "원문2", "원문3"], "qwen3:14b")
+        assert result == ["원문1", "보정됨", "원문3"]

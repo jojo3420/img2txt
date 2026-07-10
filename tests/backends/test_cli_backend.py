@@ -4,7 +4,13 @@ from __future__ import annotations
 import pytest
 from unittest.mock import patch, MagicMock
 import subprocess
-from img2txt.backends.cli import CliBackend, ClaudeBackend, CodexBackend
+from img2txt.backends.cli import (
+    CliBackend,
+    ClaudeBackend,
+    CodexBackend,
+    BATCH_SYSTEM_PROMPT,
+    SINGLE_SYSTEM_PROMPT,
+)
 
 
 def test_cli_backend_timeout():
@@ -108,3 +114,94 @@ def test_cli_backend_exception_fallback():
         result = backend.correct_batch(["문단1", "문단2"], "model")
         # 예외 → 원문 반환
         assert result == ["문단1", "문단2"]
+
+
+def test_cli_backend_returncode_error_fallback():
+    """returncode != 0 → RuntimeError 발생 → 배치 실패 → 원문 유지."""
+    backend = CliBackend("claude", timeout_sec=5)
+
+    with patch("img2txt.backends.cli.subprocess.run") as mock_run:
+        # 배치 호출에서 returncode 1 → RuntimeError → except 잡아서 원문 반환
+        mock_run.return_value = MagicMock(stdout="", returncode=1, stderr="CLI error")
+        result = backend.correct_batch(["문단1", "문단2"], "model")
+        # RuntimeError → except Exception → 원문 유지
+        assert result == ["문단1", "문단2"]
+
+
+def test_cli_backend_empty_stdout_raises_error():
+    """stdout이 비어있거나 공백뿐 → RuntimeError 발생 → 배치 실패 → 원문 유지."""
+    backend = CliBackend("claude", timeout_sec=5)
+
+    with patch("img2txt.backends.cli.subprocess.run") as mock_run:
+        # 배치 호출에서 stdout="" → RuntimeError → except 잡아서 원문 반환
+        mock_run.return_value = MagicMock(stdout="", returncode=0)
+        result = backend.correct_batch(["문단1", "문단2"], "model")
+        # RuntimeError → except Exception → 원문 유지
+        assert result == ["문단1", "문단2"]
+
+
+def test_cli_backend_fallback_empty_response():
+    """단건 폴백에서 빈 응답 → 원문 유지."""
+    backend = CliBackend("claude", timeout_sec=5)
+
+    with patch("img2txt.backends.cli.subprocess.run") as mock_run:
+        # 배치 호출 (불일치) → 폴백 시작
+        mock_run.side_effect = [
+            MagicMock(stdout="세그먼트 없음", returncode=0),  # 배치
+            MagicMock(stdout="", returncode=0),  # 폴백 1 (빈 응답)
+            MagicMock(stdout="", returncode=0),  # 폴백 2 (빈 응답)
+        ]
+        result = backend.correct_batch(["문단1", "문단2"], "model")
+        # 빈 응답 → 원문 유지
+        assert result == ["문단1", "문단2"]
+
+
+def test_cli_backend_fallback_whitespace_response():
+    """단건 폴백에서 공백만 응답 → 원문 유지."""
+    backend = CliBackend("claude", timeout_sec=5)
+
+    with patch("img2txt.backends.cli.subprocess.run") as mock_run:
+        # 배치 호출 (불일치) → 폴백 시작
+        mock_run.side_effect = [
+            MagicMock(stdout="헤더 없음", returncode=0),  # 배치
+            MagicMock(stdout="   ", returncode=0),  # 폴백 1 (공백만)
+            MagicMock(stdout="\n\n", returncode=0),  # 폴백 2 (개행만)
+        ]
+        result = backend.correct_batch(["문단1", "문단2"], "model")
+        # 공백뿐 → 원문 유지
+        assert result == ["문단1", "문단2"]
+
+
+def test_batch_system_prompt_no_placeholder():
+    """BATCH_SYSTEM_PROMPT에 {index} 리터럴이 없고 구체적 예시 포함."""
+    assert "{index}" not in BATCH_SYSTEM_PROMPT, "프롬프트에 {index} 플레이스홀더 발견"
+    assert "===문단 1===" in BATCH_SYSTEM_PROMPT, "구체적 예시 '===문단 1===' 미포함"
+    assert "===문단 2===" in BATCH_SYSTEM_PROMPT, "구체적 예시 '===문단 2===' 미포함"
+
+
+def test_fallback_uses_single_system_prompt():
+    """단건 폴백이 SINGLE_SYSTEM_PROMPT를 포함해 전송."""
+    backend = CliBackend("claude", timeout_sec=5)
+
+    with patch("img2txt.backends.cli.subprocess.run") as mock_run:
+        # 배치 호출 (불일치) → 폴백
+        mock_run.side_effect = [
+            MagicMock(stdout="헤더 없음", returncode=0),  # 배치
+            MagicMock(stdout="교정됨", returncode=0),  # 폴백 1
+        ]
+        result = backend.correct_batch(["문단1"], "model")
+
+        # run이 2번 호출됨 (배치 1회 + 폴백 1회)
+        assert mock_run.call_count == 2
+
+        # 폴백 호출의 prompt 확인
+        fallback_call_prompt = mock_run.call_args_list[1][1]["capture_output"]
+        # 실제로는 첫 번째 위치 인자인 cmd를 확인해야 함
+        # cmd는 ["claude", "-p", prompt] 형태
+        fallback_cmd = mock_run.call_args_list[1][0][0]
+        # cmd[2]가 prompt
+        assert len(fallback_cmd) == 3
+        prompt = fallback_cmd[2]
+        assert SINGLE_SYSTEM_PROMPT in prompt, "폴백이 SINGLE_SYSTEM_PROMPT를 포함하지 않음"
+        assert "문단1" in prompt, "폴백이 원문을 포함하지 않음"
+        assert result == ["교정됨"]

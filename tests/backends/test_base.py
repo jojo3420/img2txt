@@ -77,3 +77,26 @@ def test_split_corrected_segments_whitespace_trim():
     assert result is not None
     assert result[0] == "교정된 문단 1 (앞뒤 공백)"
     assert result[1] == "교정된 문단 2"
+
+
+def test_split_corrected_segments_empty_body():
+    """빈 본문 (헤더만 있음) → None (데이터 손실 방지)."""
+    response = """===문단 1===
+
+===문단 2===
+교정된 문단 2
+"""
+    result = split_corrected_segments(response, expected=2)
+    assert result is None
+
+
+def test_split_corrected_segments_whitespace_only():
+    """공백만 있는 본문 → None (공백뿐 strip='' 간주)."""
+    response = """===문단 1===
+
+
+===문단 2===
+교정된 문단 2
+"""
+    result = split_corrected_segments(response, expected=2)
+    assert result is None

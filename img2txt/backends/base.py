@@ -60,7 +60,11 @@ def split_corrected_segments(response: str, expected: int) -> list[str] | None:
             text = response[header_line_end:]
 
         # 앞뒤 공백 제거
-        segments[segment_num] = text.strip()
+        stripped = text.strip()
+        # 빈 세그먼트는 데이터 손실로 간주해 None 반환 (단건 폴백 유도)
+        if not stripped:
+            return None
+        segments[segment_num] = stripped
 
     # 1..expected가 모두 있는지 확인
     if set(segments.keys()) != set(range(1, expected + 1)):
