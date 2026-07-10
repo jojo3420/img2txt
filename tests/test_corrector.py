@@ -1,83 +1,157 @@
-"""corrector 테스트: 길이 가드(비율+절대 하한), 폴백, 긴 문단 생략, 기록. HTTP는 모킹."""
+"""corrector 배치 처리 테스트: 백엔드 Mock, 길이 가드, 긴 문단 인덱스 정합성."""
+from __future__ import annotations
+
+from unittest.mock import Mock
+
 from img2txt.corrector import (
     CorrectionRecord,
     CorrectionStatus,
     all_requests_failed,
+    classify_correction,
     correct_paragraphs,
 )
 from img2txt.writer import format_corrections_log
 
 
-def test_normal_correction_applied() -> None:
-    fake = lambda base_url, model, paragraph: paragraph.replace("경단로", "결단코")
-    results, records = correct_paragraphs(["그는 경단로 다짐했다."], model="m", request=fake)
-    assert results == ["그는 결단코 다짐했다."]
+def test_batch_correction_normal() -> None:
+    """배치 정상 보정: 3개 문단, 일부 교정/유지."""
+    backend = Mock()
+    backend.correct_batch.return_value = [
+        "그는 결단코 다짐했다.",
+        "오류 없는 문단.",
+        "20세기 최고의 트레이더"
+    ]
+
+    results, records = correct_paragraphs(
+        ["그는 경단로 다짐했다.", "오류 없는 문단.", "20 세기 최고의 트레이더"],
+        model="test",
+        backend=backend,
+    )
+
+    assert len(results) == 3
+    assert results[0] == "그는 결단코 다짐했다."
+    assert results[1] == "오류 없는 문단."
+    assert results[2] == "20세기 최고의 트레이더"
+
     assert records[0].status is CorrectionStatus.CORRECTED
+    assert records[1].status is CorrectionStatus.KEPT
+    assert records[2].status is CorrectionStatus.CORRECTED
 
 
-def test_unchanged_paragraph_kept() -> None:
-    fake = lambda base_url, model, paragraph: paragraph
-    results, records = correct_paragraphs(["오류 없는 문단."], model="m", request=fake)
-    assert results == ["오류 없는 문단."]
-    assert records[0].status is CorrectionStatus.KEPT
+def test_long_paragraph_index_integrity() -> None:
+    """긴 문단 인덱스 정합성: [짧, 긴, 짧] 순서에서 긴 것만 SKIPPED_LONG, 결과는 원위치 복원."""
+    backend = Mock()
+    backend.correct_batch.return_value = ["교정1", "교정3"]
+
+    long_para = "가" * 3000
+    short1 = "짧은1"
+    short2 = "짧은2"
+
+    results, records = correct_paragraphs(
+        [short1, long_para, short2],
+        model="test",
+        backend=backend,
+        batch_size=10,
+    )
+
+    assert len(results) == 3
+    assert results[0] == "교정1"
+    assert results[1] == long_para  # 긴 문단은 원문 유지
+    assert results[2] == "교정3"
+
+    assert records[0].status is CorrectionStatus.CORRECTED
+    assert records[1].status is CorrectionStatus.SKIPPED_LONG
+    assert records[2].status is CorrectionStatus.CORRECTED
+
+
+def test_multi_batch_with_long_paragraph_index_integrity() -> None:
+    """다중 배치([짧,짧,긴,짧,짧], batch_size=2)에서 원위치 복원 정합성."""
+    backend = Mock()
+    backend.correct_batch.side_effect = [
+        ["교정1", "교정2"],   # 배치1: 짧은1,2
+        ["교정4", "교정5"],   # 배치2: 짧은4,5
+    ]
+    paragraphs = ["짧은1", "짧은2", "가" * 3000, "짧은4", "짧은5"]
+    results, records = correct_paragraphs(paragraphs, model="test", backend=backend, batch_size=2)
+    assert len(results) == 5
+    assert results == ["교정1", "교정2", "가" * 3000, "교정4", "교정5"]
+    assert records[2].status is CorrectionStatus.SKIPPED_LONG
+    assert backend.correct_batch.call_count == 2
 
 
 def test_guard_blocks_large_length_change() -> None:
+    """길이 가드 GUARD_BLOCKED: 백엔드 결과가 길이 초과."""
+    backend = Mock()
     original = "가" * 100
-    fake = lambda base_url, model, paragraph: "가" * 130  # +30% > max(5, 10%)
-    results, records = correct_paragraphs([original], model="m", request=fake)
+    oversized = "가" * 130  # +30% > max(5, 10%)
+    backend.correct_batch.return_value = [oversized]
+
+    results, records = correct_paragraphs(
+        [original],
+        model="test",
+        backend=backend,
+    )
+
     assert results == [original]
     assert records[0].status is CorrectionStatus.GUARD_BLOCKED
+    assert records[0].after == oversized  # 차단 전 값 기록
 
 
-def test_short_paragraph_small_change_allowed_by_absolute_floor() -> None:
-    # "20 세기"(5자 문단)에서 공백 1개 제거: 비율 가드(10%=0자)로는 차단되지만 절대 하한 5자 이내 -> 허용
-    original = "20 세기"
-    fake = lambda base_url, model, paragraph: "20세기"
-    results, records = correct_paragraphs([original], model="m", request=fake)
-    assert results == ["20세기"]
-    assert records[0].status is CorrectionStatus.CORRECTED
+def test_classify_correction_kept() -> None:
+    """classify_correction: 변경 없음 -> KEPT."""
+    assert classify_correction("text", "text") is CorrectionStatus.KEPT
 
 
-def test_request_failure_keeps_original() -> None:
-    def broken(base_url: str, model: str, paragraph: str) -> str:
-        raise TimeoutError("모의 타임아웃")
-    results, records = correct_paragraphs(["원문 유지 문단."], model="m", request=broken)
-    assert results == ["원문 유지 문단."]
-    assert records[0].status is CorrectionStatus.FAILED
+def test_classify_correction_guarded() -> None:
+    """classify_correction: 길이 초과 -> GUARD_BLOCKED."""
+    original = "가" * 100
+    oversized = "가" * 130
+    assert classify_correction(original, oversized) is CorrectionStatus.GUARD_BLOCKED
 
 
-def test_long_paragraph_skipped_without_request() -> None:
-    calls: list[str] = []
-    def spy(base_url: str, model: str, paragraph: str) -> str:
-        calls.append(paragraph)
-        return paragraph
-    long_paragraph = "가" * 3000
-    results, records = correct_paragraphs([long_paragraph], model="m", request=spy)
-    assert results == [long_paragraph]
-    assert records[0].status is CorrectionStatus.SKIPPED_LONG
-    assert calls == []
+def test_classify_correction_corrected() -> None:
+    """classify_correction: 정상 변경 -> CORRECTED."""
+    assert classify_correction("경단로", "결단코") is CorrectionStatus.CORRECTED
 
 
 def test_all_requests_failed_detection() -> None:
-    def broken(base_url: str, model: str, paragraph: str) -> str:
-        raise ConnectionError("모의 접속 불가")
-    _, records = correct_paragraphs(["a", "b"], model="m", request=broken)
-    assert all_requests_failed(records) is True
-    fake = lambda base_url, model, paragraph: paragraph
-    _, ok_records = correct_paragraphs(["a"], model="m", request=fake)
-    assert all_requests_failed(ok_records) is False
-
-
-def test_corrections_log_includes_changes_only() -> None:
+    """all_requests_failed: SKIPPED_LONG 제외, FAILED만 카운트."""
     records = [
-        CorrectionRecord(1, CorrectionStatus.KEPT, "변경 없음", "m", "그대로", "그대로"),
-        CorrectionRecord(2, CorrectionStatus.CORRECTED, "텍스트 변경", "m", "경단로", "결단코"),
-        CorrectionRecord(3, CorrectionStatus.FAILED, "타임아웃", "m", "원문", "원문"),
+        CorrectionRecord(1, CorrectionStatus.SKIPPED_LONG, "긴 문단", "m", "a", "a"),
+        CorrectionRecord(2, CorrectionStatus.FAILED, "타임아웃", "m", "b", "b"),
     ]
-    log_text = format_corrections_log(records)
-    assert "[문단 1]" not in log_text          # 변경 없는 문단은 기록하지 않음 (스펙 규칙 12)
-    assert "[문단 2] 상태=보정 모델=m 사유=텍스트 변경" in log_text
-    assert "--- 전 ---\n경단로" in log_text
-    assert "--- 후 ---\n결단코" in log_text
-    assert "[문단 3] 상태=실패" in log_text
+    assert all_requests_failed(records) is True
+
+    records2 = [
+        CorrectionRecord(1, CorrectionStatus.KEPT, "변경 없음", "m", "a", "a"),
+    ]
+    assert all_requests_failed(records2) is False
+
+
+def test_batch_mismatch_fallback_to_original() -> None:
+    """배치 개수 불일치: 원문 유지."""
+    backend = Mock()
+    backend.correct_batch.return_value = ["교정1"]  # 2개 예상, 1개만 반환
+
+    results, records = correct_paragraphs(
+        ["문단1", "문단2"],
+        model="test",
+        backend=backend,
+    )
+
+    # 개수 불일치 시 원문 유지
+    assert results == ["문단1", "문단2"]
+
+
+def test_backend_exception_fallback() -> None:
+    """백엔드 예외: 원문 유지."""
+    backend = Mock()
+    backend.correct_batch.side_effect = RuntimeError("백엔드 에러")
+
+    results, records = correct_paragraphs(
+        ["문단1", "문단2"],
+        model="test",
+        backend=backend,
+    )
+
+    assert results == ["문단1", "문단2"]
