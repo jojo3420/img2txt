@@ -59,6 +59,18 @@ def test_codex_backend_init():
     assert backend.timeout_sec == 60.0
 
 
+def test_codex_command_passes_prompt_as_positional_arg():
+    """codex 명령이 prompt를 위치 인자로 넘긴다 (--output-last-message 파일옵션 오용 회귀 방지)."""
+    backend = CodexBackend(timeout_sec=5)
+    with patch("img2txt.backends.cli.subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(stdout="교정됨", returncode=0)
+        backend._run_subprocess("PROMPT-SENTINEL")
+        cmd = mock_run.call_args[0][0]
+        assert cmd == ["codex", "exec", "-m", "gpt-5.5", "PROMPT-SENTINEL"]
+        assert "--output-last-message" not in cmd
+        assert mock_run.call_args[1]["stdin"] == subprocess.DEVNULL
+
+
 def test_cli_backend_segment_mismatch_fallback():
     """세그먼트 개수 불일치 시 단건 폴백."""
     backend = CliBackend("claude", timeout_sec=5)
