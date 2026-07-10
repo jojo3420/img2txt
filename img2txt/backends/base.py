@@ -1,4 +1,4 @@
-"""보정 백엔드 인터페이스 + 마커 헬퍼."""
+"""보정 백엔드 인터페이스."""
 from __future__ import annotations
 
 import re
@@ -21,54 +21,50 @@ class CorrectionBackend(Protocol):
         ...
 
 
-MARKER_FORMAT: str = "[CORRECT:{corrected},KEPT:{kept},GUARD:{guard}]"
-_MARKER_PATTERN: re.Pattern[str] = re.compile(
-    r"\[CORRECT:(\d+),KEPT:(\d+),GUARD:(\d+)\]"
+SEGMENT_HEADER: str = "===문단 {index}==="
+_SEGMENT_PATTERN: re.Pattern[str] = re.compile(
+    r"^===문단 (\d+)===$",
+    re.MULTILINE
 )
 
 
-def build_markers(corrected_count: int, kept_count: int,
-                  guard_blocked_count: int) -> str:
-    """마커 번들 생성: 백엔드 응답에서 개수 추출용 (스펙 6절).
+def split_corrected_segments(response: str, expected: int) -> list[str] | None:
+    """센티넬 헤더로 응답을 세그먼트로 분리해 교정 문단 복원 (스펙 4.2).
 
     Args:
-        corrected_count: 보정된 문단 개수.
-        kept_count: 유지된 문단 개수.
-        guard_blocked_count: 가드에 의해 차단된 개수.
+        response: 모델 응답 텍스트 (각 문단이 ===문단 N=== 헤더로 구분).
+        expected: 예상 세그먼트 개수 (입력 문단 수).
 
     Returns:
-        마커 문자열 형식 "[CORRECT:n,KEPT:m,GUARD:g]".
+        순서대로 정렬된 교정 문단 리스트. 번호 불일치/누락/중복 시 None.
     """
-    return MARKER_FORMAT.format(
-        corrected=corrected_count,
-        kept=kept_count,
-        guard=guard_blocked_count
-    )
-
-
-def parse_markers(text: str) -> tuple[int, int, int] | None:
-    """응답 텍스트에서 마커 파싱 (스펙 6절).
-
-    Args:
-        text: 마커를 포함할 수 있는 텍스트.
-
-    Returns:
-        (corrected, kept, guard) 튜플, 또는 마커가 없으면 None.
-    """
-    match = _MARKER_PATTERN.search(text)
-    if not match:
+    matches = list(_SEGMENT_PATTERN.finditer(response))
+    if len(matches) != expected:
         return None
-    return int(match.group(1)), int(match.group(2)), int(match.group(3))
 
+    # 각 매치의 번호 추출 및 검증
+    segments: dict[int, str] = {}
+    for i, match in enumerate(matches):
+        header_line_end = match.end()
+        segment_num = int(match.group(1))
 
-def validate_marker_count(expected: int, actual: int) -> bool:
-    """파싱된 개수와 실제 개수 일치 검증 (오프셋 에러 감지, 스펙 6절).
+        # 번호 검증: 1..expected 범위이고 중복 없음
+        if segment_num < 1 or segment_num > expected or segment_num in segments:
+            return None
 
-    Args:
-        expected: 예상한 개수.
-        actual: 실제 개수.
+        # 다음 헤더 위치 또는 문자열 끝
+        if i + 1 < len(matches):
+            next_header_start = matches[i + 1].start()
+            text = response[header_line_end:next_header_start]
+        else:
+            text = response[header_line_end:]
 
-    Returns:
-        일치하면 True, 불일치하면 False.
-    """
-    return expected == actual
+        # 앞뒤 공백 제거
+        segments[segment_num] = text.strip()
+
+    # 1..expected가 모두 있는지 확인
+    if set(segments.keys()) != set(range(1, expected + 1)):
+        return None
+
+    # 순서대로 반환
+    return [segments[i] for i in range(1, expected + 1)]

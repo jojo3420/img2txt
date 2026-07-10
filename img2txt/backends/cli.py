@@ -8,16 +8,17 @@ import shlex
 import subprocess
 from typing import Any
 
-from img2txt.backends.base import build_markers, parse_markers
+from img2txt.backends.base import SEGMENT_HEADER, split_corrected_segments
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT_SEC: float = 120.0
 BATCH_SYSTEM_PROMPT: str = (
-    "다음 문단 목록을 한국어 OCR 오류 교정한다. "
-    "각 문단을 번호별로 교정하고, 마지막에 다음 형식으로 결과 개수를 명시하라:\n"
-    "[CORRECT:n,KEPT:m,GUARD:g]\n"
-    "여기서 n=교정된 문단, m=유지된 문단, g=가드로 차단된 문단이다."
+    "다음 문단 목록에서 오탈자와 띄어쓰기만 교정한다. "
+    "재작성, 추가, 삭제, 요약은 금지하고, 고칠 것이 없으면 원문 그대로이다. "
+    "각 문단마다 다음 헤더를 한 줄씩 먼저 출력하고, 그 아래 교정된 문단 텍스트만 출력하라:\n"
+    f"{SEGMENT_HEADER}\n"
+    "N은 입력 번호와 동일하고, 헤더 외에 설명, 요약, 기타 텍스트는 금지된다."
 )
 
 
@@ -77,10 +78,11 @@ class CliBackend:
             model: (미사용, CLI는 내부 모델 사용).
 
         Returns:
-            보정된 문단 목록.
+            보정된 문단 목록. 세그먼트 분리 실패 시 단건 폴백.
 
         Note:
-            마커 파싱 실패 시 원문 그대로 반환. 개수 불일치 시 단건 폴백 시도.
+            세그먼트 분리 실패(개수 불일치/번호 누락) 시 단건 폴백.
+            타임아웃/예외 시 원문 그대로 반환.
         """
         if not paragraphs:
             return []
@@ -98,27 +100,17 @@ class CliBackend:
             logger.error("배치 보정 실패: %s, 원문 반환", error)
             return paragraphs
 
-        # 마커 파싱
-        markers = parse_markers(response)
-        if markers is None:
-            logger.warning("마커 미검출, 원문 반환")
-            return paragraphs
-
-        corrected_count, kept_count, guard_count = markers
-        total_marked = corrected_count + kept_count + guard_count
-
-        if total_marked != len(paragraphs):
+        # 세그먼트 분리
+        segments = split_corrected_segments(response, len(paragraphs))
+        if segments is None:
             logger.warning(
-                "개수 불일치 (예상 %d, 파싱 %d), 단건 폴백 시도",
-                len(paragraphs), total_marked
+                "세그먼트 분리 실패 (예상 %d개), 단건 폴백 시도",
+                len(paragraphs)
             )
             return self._fallback_single_paragraph(paragraphs)
 
-        # 마커 검증 통과: 응답 텍스트에서 교정 결과 추출 (간단 구현)
-        # 실제로는 CLI 응답 형식을 파싱해야 함. 이번엔 원문과 마커만으로 처리.
-        logger.info("배치 보정 완료: 교정 %d, 유지 %d, 가드 %d",
-                    corrected_count, kept_count, guard_count)
-        return paragraphs  # 간단 폴백: 현재는 마커만 검증하고 원문 반환
+        logger.info("배치 보정 완료: %d개 세그먼트 복원", len(segments))
+        return segments
 
     def _fallback_single_paragraph(self, paragraphs: list[str]) -> list[str]:
         """단건 보정으로 폴백 (개수 불일치 시 최후 수단)."""

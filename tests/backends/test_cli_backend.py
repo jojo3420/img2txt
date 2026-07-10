@@ -17,15 +17,26 @@ def test_cli_backend_timeout():
         assert result == ["원문"]
 
 
-def test_cli_backend_batch_parsing():
-    """마커 파싱으로 개수 검증."""
+def test_cli_backend_batch_parsing_with_segments():
+    """센티넬 헤더로 세그먼트 복원."""
     backend = CliBackend("claude", timeout_sec=5)
-    response = "텍스트 내용\n[CORRECT:2,KEPT:1,GUARD:0]"
+    response = """===문단 1===
+교정된 문단1
+
+===문단 2===
+교정된 문단2
+
+===문단 3===
+교정된 문단3
+"""
     with patch("img2txt.backends.cli.subprocess.run") as mock_run:
         mock_run.return_value = MagicMock(stdout=response, returncode=0)
-        result = backend.correct_batch(["문단1", "문단2", "문단3"], "model")
-        # 마커 검증: 2+1+0 = 3개 (입력 3개와 일치)
+        result = backend.correct_batch(["원문1", "원문2", "원문3"], "model")
+        # 세그먼트 복원: 원문과 다른 텍스트 확인 (no-op 회귀 방지)
         assert len(result) == 3
+        assert result[0] == "교정된 문단1"
+        assert result[1] == "교정된 문단2"
+        assert result[2] == "교정된 문단3"
 
 
 def test_claude_backend_init():
@@ -42,21 +53,25 @@ def test_codex_backend_init():
     assert backend.timeout_sec == 60.0
 
 
-def test_cli_backend_marker_mismatch_fallback():
-    """개수 불일치 시 단건 폴백."""
+def test_cli_backend_segment_mismatch_fallback():
+    """세그먼트 개수 불일치 시 단건 폴백."""
     backend = CliBackend("claude", timeout_sec=5)
-    # 마커에서 2+1+0=3개라고 하지만 입력은 2개
-    response = "텍스트\n[CORRECT:2,KEPT:1,GUARD:0]"
+    # 세그먼트는 1개만 있지만 입력은 2개 예상
+    response = """===문단 1===
+교정된 문단 1
+"""
 
     with patch("img2txt.backends.cli.subprocess.run") as mock_run:
         # 배치 호출 후 폴백 시 단건 호출
         mock_run.side_effect = [
-            MagicMock(stdout=response, returncode=0),  # 배치 호출
-            MagicMock(stdout="교정됨", returncode=0),  # 폴백 1
-            MagicMock(stdout="교정됨", returncode=0),  # 폴백 2
+            MagicMock(stdout=response, returncode=0),  # 배치 호출 (불일치)
+            MagicMock(stdout="교정됨1", returncode=0),  # 폴백 1
+            MagicMock(stdout="교정됨2", returncode=0),  # 폴백 2
         ]
         result = backend.correct_batch(["문단1", "문단2"], "model")
         assert len(result) == 2
+        # 폴백 결과 사용
+        assert result == ["교정됨1", "교정됨2"]
 
 
 def test_cli_backend_empty_paragraphs():
@@ -66,16 +81,22 @@ def test_cli_backend_empty_paragraphs():
     assert result == []
 
 
-def test_cli_backend_no_marker_in_response():
-    """응답에 마커가 없을 때 원문 반환."""
+def test_cli_backend_no_segment_header_in_response():
+    """응답에 세그먼트 헤더가 없을 때 단건 폴백."""
     backend = CliBackend("claude", timeout_sec=5)
-    response = "마커 없는 응답입니다"
+    response = "헤더 없는 응답입니다"
 
     with patch("img2txt.backends.cli.subprocess.run") as mock_run:
-        mock_run.return_value = MagicMock(stdout=response, returncode=0)
+        # 배치 호출 후 폴백 호출
+        mock_run.side_effect = [
+            MagicMock(stdout=response, returncode=0),  # 배치 호출 (헤더 없음)
+            MagicMock(stdout="교정됨1", returncode=0),  # 폴백 1
+            MagicMock(stdout="교정됨2", returncode=0),  # 폴백 2
+        ]
         result = backend.correct_batch(["문단1", "문단2"], "model")
-        # 마커 미검출 → 원문 반환
-        assert result == ["문단1", "문단2"]
+        # 세그먼트 미검출 → 단건 폴백
+        assert len(result) == 2
+        assert result == ["교정됨1", "교정됨2"]
 
 
 def test_cli_backend_exception_fallback():
