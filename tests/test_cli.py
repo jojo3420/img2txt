@@ -1,9 +1,7 @@
 """CLI 백엔드 파서 및 가용성 검사 테스트."""
 from __future__ import annotations
 
-from unittest.mock import Mock, patch
-
-import pytest
+from unittest.mock import patch
 
 from img2txt.cli import check_backend_availability, build_parser
 

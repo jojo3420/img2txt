@@ -5,7 +5,6 @@ import json
 import logging
 import urllib.error
 import urllib.request
-from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
@@ -133,6 +132,9 @@ def correct_paragraphs(
     results: list[str | None] = [None] * len(paragraphs)
     records: list[CorrectionRecord | None] = [None] * len(paragraphs)
 
+    if batch_size < 1:
+        raise ValueError("batch_size는 1 이상이어야 합니다")
+
     # 긴 문단 분리
     short_paragraphs: list[str] = []
     short_to_orig_idx: list[int] = []
@@ -155,15 +157,18 @@ def correct_paragraphs(
 
     # 배치 처리
     batch_results: list[str] = []
+    failed_flags: list[bool] = []
     for chunk_start in range(0, len(short_paragraphs), batch_size):
         chunk_end = min(chunk_start + batch_size, len(short_paragraphs))
         chunk = short_paragraphs[chunk_start:chunk_end]
+        chunk_failed = False
 
         try:
             chunk_result = backend.correct_batch(chunk, model)
         except Exception as error:
             logger.error("배치 보정 실패: %s, 원문 유지", error)
             chunk_result = chunk
+            chunk_failed = True
 
         # 개수 불일치 방어
         if len(chunk_result) != len(chunk):
@@ -172,13 +177,23 @@ def correct_paragraphs(
                 len(chunk), len(chunk_result)
             )
             chunk_result = chunk
+            chunk_failed = True
 
         batch_results.extend(chunk_result)
+        failed_flags.extend([chunk_failed] * len(chunk))
 
     # 원위치 복원 및 분류
     for batch_idx, orig_idx in enumerate(short_to_orig_idx):
         original = paragraphs[orig_idx]
         corrected = batch_results[batch_idx]
+
+        if failed_flags[batch_idx]:
+            results[orig_idx] = original
+            records[orig_idx] = CorrectionRecord(
+                orig_idx + 1, CorrectionStatus.FAILED,
+                "보정 실패 (백엔드 예외/개수 불일치)", model, original, original,
+            )
+            continue
 
         status = classify_correction(original, corrected)
         reason: str

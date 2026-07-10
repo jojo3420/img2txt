@@ -141,6 +141,8 @@ def test_batch_mismatch_fallback_to_original() -> None:
 
     # 개수 불일치 시 원문 유지
     assert results == ["문단1", "문단2"]
+    assert all(record.status is CorrectionStatus.FAILED for record in records)
+    assert "개수 불일치" in records[0].reason
 
 
 def test_backend_exception_fallback() -> None:
@@ -155,3 +157,5 @@ def test_backend_exception_fallback() -> None:
     )
 
     assert results == ["문단1", "문단2"]
+    assert all(record.status is CorrectionStatus.FAILED for record in records)
+    assert "예외" in records[0].reason
