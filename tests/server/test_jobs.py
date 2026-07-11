@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+import server.pipeline as pipeline_module
 from img2txt.layout import PageLayout
 from img2txt.ocr import OcrLine, Page
 from img2txt.scanner import collect_images
@@ -126,6 +127,29 @@ def test_retry_replaces_only_failed_page_and_preserves_corrected_outputs(
         "server.pipeline.recognize_page",
         recognize_target_page,
     )
+    marker = output / ".retry-transaction.json"
+    real_fsync_directory = pipeline_module._fsync_directory
+    marker_was_visible = False
+    commit_fsync_failed = False
+
+    def fail_fsync_after_marker_removal(path: Path) -> None:
+        nonlocal marker_was_visible, commit_fsync_failed
+        if marker.exists():
+            marker_was_visible = True
+        if (
+            marker_was_visible
+            and not marker.exists()
+            and path == output
+            and not commit_fsync_failed
+        ):
+            commit_fsync_failed = True
+            raise OSError("directory fsync failed")
+        real_fsync_directory(path)
+
+    monkeypatch.setattr(
+        "server.pipeline._fsync_directory",
+        fail_fsync_after_marker_removal,
+    )
 
     store._run_retry(job_id, job_path, 2)
 
@@ -144,6 +168,7 @@ def test_retry_replaces_only_failed_page_and_preserves_corrected_outputs(
     updated = store.get_job(job_id)
     assert updated is not None
     assert updated.files[1].status is FileStatus.DONE
+    assert commit_fsync_failed
     store.shutdown()
 
 

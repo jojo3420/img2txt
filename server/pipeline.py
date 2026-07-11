@@ -122,7 +122,14 @@ def _recover_pending_replacement(output_dir: Path) -> None:
         backup_paths.append(backup)
 
     marker.unlink()
-    _fsync_directory(output_dir)
+    try:
+        _fsync_directory(output_dir)
+    except OSError as error:
+        logger.warning(
+            "복구 표시 파일 삭제 동기화 실패, 백업 유지: %s",
+            error,
+        )
+        return
     for backup in backup_paths:
         try:
             backup.unlink(missing_ok=True)
@@ -193,10 +200,17 @@ def _replace_text_outputs(changes: dict[Path, str]) -> None:
     else:
         try:
             marker.unlink()
-            _fsync_directory(output_dir)
         except Exception:
             _recover_pending_replacement(output_dir)
             raise
+        try:
+            _fsync_directory(output_dir)
+        except OSError as error:
+            logger.warning(
+                "재시도 커밋 동기화 실패, 복구 백업 유지: %s",
+                error,
+            )
+            return
         for backup in backup_paths:
             try:
                 backup.unlink(missing_ok=True)
