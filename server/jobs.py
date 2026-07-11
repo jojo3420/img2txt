@@ -128,12 +128,12 @@ class JobStore:
     def _notify_update(self, job: Job) -> None:
         """파이프라인이 바꾼 잡 상태를 저장한다."""
         with self._lock:
-            self.jobs[job.id] = job
+            self.jobs[job.id] = job.model_copy(deep=True)
 
     def _run_job(self, job_id: str, job_path: Path) -> None:
         """변환 후 선택적으로 보정 파이프라인을 실행한다."""
         with self._lock:
-            job = self.jobs[job_id]
+            job = self.jobs[job_id].model_copy(deep=True)
             self.running_count += 1
             job.status = JobStatus.PROCESSING
         self._notify_update(job)
@@ -172,46 +172,51 @@ class JobStore:
     ) -> None:
         """페이지 재시도를 실행하고 잡 전체 상태를 다시 계산한다."""
         with self._lock:
-            job = self.jobs[job_id]
+            job = self.jobs[job_id].model_copy(deep=True)
+            self.running_count += 1
         try:
-            success = asyncio.run(
-                retry_page_pipeline(
-                    job,
-                    job_path,
-                    page_number,
-                    self._notify_update,
+            try:
+                success = asyncio.run(
+                    retry_page_pipeline(
+                        job,
+                        job_path,
+                        page_number,
+                        self._notify_update,
+                    )
                 )
-            )
-            job.status = (
-                JobStatus.DONE
-                if success
-                or any(
-                    item.status is FileStatus.DONE
-                    for item in job.files
+                job.status = (
+                    JobStatus.DONE
+                    if success
+                    or any(
+                        item.status is FileStatus.DONE
+                        for item in job.files
+                    )
+                    else JobStatus.FAILED
                 )
-                else JobStatus.FAILED
-            )
-        except Exception as error:
-            file_entry = next(
-                (
-                    item
-                    for item in job.files
-                    if item.pageNumber == page_number
-                ),
-                None,
-            )
-            if file_entry is not None:
-                file_entry.status = FileStatus.FAILED
-                file_entry.error = str(error)
-            job.status = (
-                JobStatus.DONE
-                if any(
-                    item.status is FileStatus.DONE
-                    for item in job.files
+            except Exception as error:
+                file_entry = next(
+                    (
+                        item
+                        for item in job.files
+                        if item.pageNumber == page_number
+                    ),
+                    None,
                 )
-                else JobStatus.FAILED
-            )
-        self._notify_update(job)
+                if file_entry is not None:
+                    file_entry.status = FileStatus.FAILED
+                    file_entry.error = str(error)
+                job.status = (
+                    JobStatus.DONE
+                    if any(
+                        item.status is FileStatus.DONE
+                        for item in job.files
+                    )
+                    else JobStatus.FAILED
+                )
+            self._notify_update(job)
+        finally:
+            with self._lock:
+                self.running_count -= 1
 
     def shutdown(self) -> None:
         """새 작업을 막고 실행 중인 워커가 끝날 때까지 기다린다."""

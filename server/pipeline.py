@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import tempfile
+import uuid
 from pathlib import Path
 from typing import Callable
 
@@ -17,7 +18,7 @@ from img2txt.corrector import (
 )
 from img2txt.layout import PageLayout, analyze_page
 from img2txt.ocr import Page, recognize_page
-from img2txt.scanner import collect_images
+from img2txt.scanner import collect_images, extract_page_number
 from img2txt.writer import (
     format_corrections_log,
     write_page_texts,
@@ -28,6 +29,7 @@ from server.storage import JobStorage
 
 logger = logging.getLogger(__name__)
 UpdateCallback = Callable[[Job], None]
+_RETRY_MARKER = ".retry-transaction.json"
 
 
 def _layout_path(job_path: Path, page_number: int) -> Path:
@@ -67,12 +69,102 @@ def load_stored_layout(path: Path) -> tuple[PageLayout, int]:
     return layout, int(payload["removed_footer_lines"])
 
 
+def _fsync_directory(path: Path) -> None:
+    """파일명 변경까지 디스크에 반영되도록 디렉터리를 동기화한다."""
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _write_bytes_durable(path: Path, content: bytes) -> None:
+    """같은 디렉터리의 임시 파일을 거쳐 바이트를 안전하게 쓴다."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            "wb",
+            dir=path.parent,
+            delete=False,
+        ) as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+            temporary = Path(handle.name)
+        os.replace(temporary, path)
+        _fsync_directory(path.parent)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def _recover_pending_replacement(output_dir: Path) -> None:
+    """중단된 재시도 트랜잭션을 실제 백업 파일로 되돌린다."""
+    marker = output_dir / _RETRY_MARKER
+    if not marker.exists():
+        return
+
+    payload = json.loads(marker.read_text(encoding="utf-8"))
+    entries = list(payload["entries"])
+    backup_paths: list[Path] = []
+    for entry in entries:
+        target = output_dir / str(entry["target"])
+        backup_name = entry["backup"]
+        if backup_name is None:
+            target.unlink(missing_ok=True)
+            continue
+        backup = output_dir / str(backup_name)
+        if not backup.exists():
+            raise RuntimeError(f"재시도 백업 파일 누락: {backup}")
+        _write_bytes_durable(target, backup.read_bytes())
+        backup_paths.append(backup)
+
+    marker.unlink()
+    _fsync_directory(output_dir)
+    for backup in backup_paths:
+        backup.unlink(missing_ok=True)
+
+
 def _replace_text_outputs(changes: dict[Path, str]) -> None:
-    """여러 텍스트 파일을 교체하고 실패하면 기존 내용으로 되돌린다."""
-    backups = {
-        path: path.read_bytes() if path.exists() else None
-        for path in changes
-    }
+    """파일 기반 복구 기록을 남기고 여러 텍스트를 교체한다."""
+    output_dir = Path(
+        os.path.commonpath([str(path.parent) for path in changes])
+    )
+    _recover_pending_replacement(output_dir)
+
+    transaction_id = uuid.uuid4().hex
+    entries: list[dict[str, str | None]] = []
+    backup_paths: list[Path] = []
+    for target in changes:
+        backup: Path | None = None
+        if target.exists():
+            backup = target.parent / (
+                f".{target.name}.retry-{transaction_id}.bak"
+            )
+            with backup.open("wb") as handle:
+                handle.write(target.read_bytes())
+                handle.flush()
+                os.fsync(handle.fileno())
+            backup_paths.append(backup)
+        entries.append(
+            {
+                "target": str(target.relative_to(output_dir)),
+                "backup": (
+                    str(backup.relative_to(output_dir))
+                    if backup is not None
+                    else None
+                ),
+            }
+        )
+
+    marker = output_dir / _RETRY_MARKER
+    with marker.open("w", encoding="utf-8") as handle:
+        json.dump({"entries": entries}, handle, ensure_ascii=False)
+        handle.flush()
+        os.fsync(handle.fileno())
+    _fsync_directory(output_dir)
+
     temporary_paths: dict[Path, Path] = {}
     try:
         for target, text in changes.items():
@@ -89,13 +181,15 @@ def _replace_text_outputs(changes: dict[Path, str]) -> None:
                 temporary_paths[target] = Path(handle.name)
         for target, temporary in temporary_paths.items():
             os.replace(temporary, target)
+            _fsync_directory(target.parent)
     except Exception:
-        for target, content in backups.items():
-            if content is None:
-                target.unlink(missing_ok=True)
-            else:
-                target.write_bytes(content)
+        _recover_pending_replacement(output_dir)
         raise
+    else:
+        marker.unlink()
+        _fsync_directory(output_dir)
+        for backup in backup_paths:
+            backup.unlink(missing_ok=True)
     finally:
         for temporary in temporary_paths.values():
             temporary.unlink(missing_ok=True)
@@ -110,7 +204,9 @@ async def run_convert_pipeline(
     """모든 이미지를 OCR하고 페이지·연속본 텍스트를 만든다."""
     del storage  # T9와 공유하는 공개 인터페이스를 유지한다.
     image_paths = collect_images(job_path / "uploads")
-    if not image_paths or len(image_paths) != len(job.files):
+    image_numbers = [extract_page_number(path) for path in image_paths]
+    expected_numbers = [file.pageNumber for file in job.files]
+    if not image_paths or image_numbers != expected_numbers:
         job.status = JobStatus.FAILED
         on_update(job)
         return
@@ -151,9 +247,12 @@ async def run_convert_pipeline(
         failedPages=failed_count,
         removedFooterLines=sum(len(layout.footer_lines) for layout in layouts),
     )
-    job.status = (
-        JobStatus.FAILED if failed_count == len(pages) else JobStatus.DONE
-    )
+    if failed_count == len(pages):
+        job.status = JobStatus.FAILED
+    elif job.options.correct:
+        job.status = JobStatus.PROCESSING
+    else:
+        job.status = JobStatus.DONE
     on_update(job)
 
 
@@ -177,7 +276,9 @@ async def run_correct_pipeline(
         if not paragraphs:
             raise ValueError("처리할 문단이 없습니다")
 
+        job.status = JobStatus.PROCESSING
         job.phase = "correcting"
+        job.correction = {"done": 0, "total": len(paragraphs)}
         on_update(job)
         backend = select_backend(job.options.model, job.options.backend)
         corrected, records = correct_paragraphs(
@@ -185,6 +286,10 @@ async def run_correct_pipeline(
             job.options.model,
             backend,
         )
+        job.correction = {
+            "done": len(records),
+            "total": len(paragraphs),
+        }
         write_text_file(
             output_dir / "corrections.log",
             format_corrections_log(records),
@@ -200,24 +305,22 @@ async def run_correct_pipeline(
             output_dir / "book_corrected.txt",
             "\n\n".join(corrected),
         )
-        job.correction = {
-            "corrected": sum(
-                1 for record in records
-                if record.status is CorrectionStatus.CORRECTED
-            ),
-            "kept": sum(
-                1 for record in records
-                if record.status is CorrectionStatus.KEPT
-            ),
-            "guardBlocked": sum(
-                1 for record in records
-                if record.status is CorrectionStatus.GUARD_BLOCKED
-            ),
-        }
+        corrected_count = sum(
+            1 for record in records
+            if record.status is CorrectionStatus.CORRECTED
+        )
+        kept_count = sum(
+            1 for record in records
+            if record.status is CorrectionStatus.KEPT
+        )
+        guard_blocked_count = sum(
+            1 for record in records
+            if record.status is CorrectionStatus.GUARD_BLOCKED
+        )
         if job.summary is not None:
-            job.summary.corrected = job.correction["corrected"]
-            job.summary.kept = job.correction["kept"]
-            job.summary.guardBlocked = job.correction["guardBlocked"]
+            job.summary.corrected = corrected_count
+            job.summary.kept = kept_count
+            job.summary.guardBlocked = guard_blocked_count
         job.correctionError = None
         job.status = JobStatus.DONE
         on_update(job)
@@ -235,6 +338,7 @@ async def retry_page_pipeline(
     on_update: UpdateCallback,
 ) -> bool:
     """페이지 하나만 다시 OCR하고 기존 레이아웃과 안전하게 재조립한다."""
+    _recover_pending_replacement(job_path / "output")
     file_entry = next(
         (item for item in job.files if item.pageNumber == page_number),
         None,
@@ -242,8 +346,12 @@ async def retry_page_pipeline(
     if file_entry is None:
         return False
 
-    image_paths = collect_images(job_path / "uploads")
-    if page_number < 1 or page_number > len(image_paths):
+    image_paths = [
+        path
+        for path in collect_images(job_path / "uploads")
+        if extract_page_number(path) == page_number
+    ]
+    if len(image_paths) != 1:
         file_entry.status = FileStatus.FAILED
         file_entry.error = "재시도할 페이지 이미지를 찾을 수 없습니다"
         on_update(job)
@@ -252,7 +360,7 @@ async def retry_page_pipeline(
     file_entry.status = FileStatus.OCR
     on_update(job)
     try:
-        page = recognize_page(image_paths[page_number - 1], page_number)
+        page = recognize_page(image_paths[0], page_number)
         replacement = analyze_page(page)
         layouts: list[PageLayout] = []
         footer_counts: list[int] = []

@@ -1,7 +1,10 @@
 """잡 저장소와 안전 재시도 핵심 테스트."""
 import os
 from pathlib import Path
+from threading import Event
 from unittest.mock import MagicMock
+
+import pytest
 
 from img2txt.layout import PageLayout
 from img2txt.ocr import OcrLine, Page
@@ -13,23 +16,54 @@ from server.pipeline import save_stored_layout
 
 def test_create_job_naturally_sorts_files_and_uses_internal_names(
     tmp_path: Path,
+    monkeypatch,
 ) -> None:
-    store = JobStore(tmp_path, max_concurrent=1)
-    store.executor.submit = MagicMock()  # type: ignore[method-assign]
+    correction_started = Event()
+    release_correction = Event()
 
+    def fake_recognize(_path: Path, number: int) -> Page:
+        if number == 1:
+            raise RuntimeError("ocr failed")
+        return Page(
+            number,
+            [OcrLine("정상 페이지", 1.0, 0.1, 0.5, 0.8, 0.02)],
+        )
+
+    async def blocking_correction(job, _path, _storage, on_update) -> None:
+        correction_started.set()
+        release_correction.wait(timeout=5)
+        job.status = JobStatus.DONE
+        on_update(job)
+
+    monkeypatch.setattr("server.pipeline.recognize_page", fake_recognize)
+    monkeypatch.setattr("server.jobs.run_correct_pipeline", blocking_correction)
+    store = JobStore(tmp_path, max_concurrent=1)
     job_id = store.create_job(
         [("page-10.jpg", b"10"), ("page-2.jpg", b"2")],
-        JobOptions(correct=False),
+        JobOptions(correct=True),
     )
+    assert correction_started.wait(timeout=2)
+    try:
+        job = store.get_job(job_id)
+        assert job is not None
+        assert [file.filename for file in job.files] == [
+            "page-2.jpg",
+            "page-10.jpg",
+        ]
+        assert [file.pageNumber for file in job.files] == [1, 2]
+        saved = collect_images(tmp_path / job_id / "uploads")
+        assert len(saved) == 2
+        assert saved[0].name.endswith("page-0001.jpg")
+        assert job.status is JobStatus.PROCESSING
+        assert job.files[0].status is FileStatus.FAILED
+        assert store.retry_file(job_id, job.files[0].id) is False
+    finally:
+        release_correction.set()
+        store.shutdown()
 
-    job = store.get_job(job_id)
-    assert job is not None
-    assert [file.filename for file in job.files] == ["page-2.jpg", "page-10.jpg"]
-    assert [file.pageNumber for file in job.files] == [1, 2]
-    saved = collect_images(tmp_path / job_id / "uploads")
-    assert len(saved) == 2
-    assert saved[0].name.endswith("page-0001.jpg")
-    store.shutdown()
+    finished = store.get_job(job_id)
+    assert finished is not None
+    assert finished.status is JobStatus.DONE
 
 
 def test_retry_replaces_only_failed_page_and_preserves_corrected_outputs(
@@ -43,6 +77,9 @@ def test_retry_replaces_only_failed_page_and_preserves_corrected_outputs(
         JobOptions(correct=False),
     )
     job_path = tmp_path / job_id
+    stored_images = collect_images(job_path / "uploads")
+    stored_images[0].unlink()
+    (job_path / "uploads" / "upload-decoy-page-0099.jpg").write_bytes(b"99")
     output = job_path / "output"
     (output / "pages").mkdir(parents=True)
     (output / "layouts").mkdir(parents=True)
@@ -67,6 +104,10 @@ def test_retry_replaces_only_failed_page_and_preserves_corrected_outputs(
         "보정본 유지",
         encoding="utf-8",
     )
+    (output / "corrections.log").write_text(
+        "보정 기록 유지",
+        encoding="utf-8",
+    )
 
     with store._lock:
         live_job = store.jobs[job_id]
@@ -74,12 +115,16 @@ def test_retry_replaces_only_failed_page_and_preserves_corrected_outputs(
         live_job.files[1].status = FileStatus.FAILED
         live_job.files[1].error = "old error"
 
-    monkeypatch.setattr(
-        "server.pipeline.recognize_page",
-        lambda _path, number: Page(
+    def recognize_target_page(path: Path, number: int) -> Page:
+        assert path.name.endswith("page-0002.jpg")
+        return Page(
             number,
             [OcrLine("복구 2", 1.0, 0.1, 0.5, 0.8, 0.02)],
-        ),
+        )
+
+    monkeypatch.setattr(
+        "server.pipeline.recognize_page",
+        recognize_target_page,
     )
 
     store._run_retry(job_id, job_path, 2)
@@ -93,13 +138,16 @@ def test_retry_replaces_only_failed_page_and_preserves_corrected_outputs(
     assert (
         output / "book_corrected.txt"
     ).read_text(encoding="utf-8") == "보정본 유지"
+    assert (
+        output / "corrections.log"
+    ).read_text(encoding="utf-8") == "보정 기록 유지"
     updated = store.get_job(job_id)
     assert updated is not None
     assert updated.files[1].status is FileStatus.DONE
     store.shutdown()
 
 
-def test_retry_rolls_back_outputs_when_file_replacement_fails(
+def test_retry_recovers_outputs_after_interrupted_replacement(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -138,23 +186,37 @@ def test_retry_rolls_back_outputs_when_file_replacement_fails(
     real_replace = os.replace
     replace_count = 0
 
-    def fail_second_replace(source: Path, target: Path) -> None:
+    class SimulatedCrash(BaseException):
+        pass
+
+    def crash_on_second_replace(source: Path, target: Path) -> None:
         nonlocal replace_count
         replace_count += 1
         if replace_count == 2:
-            raise OSError("disk error")
+            raise SimulatedCrash("process stopped")
         real_replace(source, target)
 
-    monkeypatch.setattr("server.pipeline.os.replace", fail_second_replace)
+    monkeypatch.setattr("server.pipeline.os.replace", crash_on_second_replace)
     before = {
         page_path: page_path.read_bytes(),
         layout_path: layout_path.read_bytes(),
         book_path: book_path.read_bytes(),
     }
 
+    with pytest.raises(SimulatedCrash):
+        store._run_retry(job_id, job_path, 1)
+
+    marker = output / ".retry-transaction.json"
+    assert marker.exists()
+    monkeypatch.setattr("server.pipeline.os.replace", real_replace)
+    monkeypatch.setattr(
+        "server.pipeline.recognize_page",
+        lambda *_args: (_ for _ in ()).throw(RuntimeError("retry stopped")),
+    )
     store._run_retry(job_id, job_path, 1)
 
     assert {path: path.read_bytes() for path in before} == before
+    assert not marker.exists()
     updated = store.get_job(job_id)
     assert updated is not None
     assert updated.files[0].status is FileStatus.FAILED

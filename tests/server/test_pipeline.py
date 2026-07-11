@@ -109,9 +109,19 @@ def test_correction_failure_preserves_book_and_finishes_job(
         "server.pipeline.correct_paragraphs",
         lambda *_args: (["원문"], [record]),
     )
+    updates: list[tuple[JobStatus, str, dict[str, int]]] = []
+
+    def record_update(current: Job) -> None:
+        updates.append(
+            (
+                current.status,
+                current.phase,
+                dict(current.correction or {}),
+            )
+        )
 
     asyncio.run(
-        run_correct_pipeline(job, tmp_path, JobStorage(tmp_path), MagicMock())
+        run_correct_pipeline(job, tmp_path, JobStorage(tmp_path), record_update)
     )
 
     assert book.read_text(encoding="utf-8") == "원문"
@@ -119,5 +129,11 @@ def test_correction_failure_preserves_book_and_finishes_job(
     assert "상태=실패" in (output / "corrections.log").read_text(
         encoding="utf-8"
     )
+    assert (
+        JobStatus.PROCESSING,
+        "correcting",
+        {"done": 0, "total": 1},
+    ) in updates
+    assert job.correction == {"done": 1, "total": 1}
     assert job.status is JobStatus.DONE
     assert job.correctionError
