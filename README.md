@@ -42,6 +42,33 @@ ollama pull qwen3:14b
 
 ---
 
+## 가상환경 세팅
+
+프로젝트 루트에 Python 3.13 가상환경(`.venv`)을 만들어 사용합니다.
+
+```bash
+# 1) 가상환경 생성
+python3.13 -m venv .venv
+
+# 2) 활성화 (zsh/bash)
+source .venv/bin/activate
+
+# 3) 패키지 설치
+pip install ocrmac Pillow pytest
+```
+
+`.venv/`는 `.gitignore`에 등록되어 있어 커밋되지 않습니다.
+
+### IntelliJ 연동
+
+1. `File → Project Structure → SDKs` 에서 `+` → **Add Python SDK...**
+2. **Virtualenv Environment → Existing environment** 선택 → `<프로젝트 루트>/.venv/bin/python3.13` 지정
+3. `Project Structure → Modules` 에서 모듈 SDK를 방금 등록한 인터프리터로 설정
+
+이후 IntelliJ 내장 터미널-Run 구성이 자동으로 `.venv`를 사용합니다.
+
+---
+
 ## 사용법
 
 패키지 형태로 `python -m img2txt <서브커맨드>`로 실행합니다.
