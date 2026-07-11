@@ -23,7 +23,7 @@ output/
   book.txt
 ```
 
-JSON에는 `number`, `paragraphs`, `first_is_continuation`, `is_empty`만 저장한다. `book.txt` 재조립에 필요하지 않은 OCR 좌표와 꼬리말 원문은 저장하지 않는다.
+JSON에는 `number`, `paragraphs`, `first_is_continuation`, `is_empty`, `removed_footer_lines`를 저장한다. `book.txt` 재조립에 필요하지 않은 OCR 좌표와 꼬리말 원문은 저장하지 않는다. 꼬리말 개수는 재시도 뒤 요약 통계를 다시 계산할 때 사용한다.
 
 다른 선택지는 제외한다.
 
