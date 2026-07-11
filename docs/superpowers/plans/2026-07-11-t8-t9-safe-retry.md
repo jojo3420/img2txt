@@ -30,7 +30,7 @@
 - Consumes: `collect_images(Path) -> list[Path]`, `recognize_page(Path, int) -> Page`, `analyze_page(Page) -> PageLayout`, `assemble(list[PageLayout]) -> str`
 - Produces: `run_convert_pipeline(job, job_path, storage, on_update) -> None`, `load_stored_layout(path) -> tuple[PageLayout, int]`
 
-- [ ] **Step 1: 일부 OCR 실패 테스트 작성**
+- [x] **Step 1: 일부 OCR 실패 테스트 작성**
 
 ```python
 import asyncio
@@ -86,13 +86,13 @@ def test_convert_keeps_other_pages_when_one_ocr_fails(tmp_path, monkeypatch):
     assert job.status is JobStatus.DONE
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run: `rtk pytest tests/server/test_pipeline.py::test_convert_keeps_other_pages_when_one_ocr_fails -v`
 
 Expected: FAIL with `ModuleNotFoundError: No module named 'server.pipeline'`.
 
-- [ ] **Step 3: 레이아웃 저장과 변환 최소 구현**
+- [x] **Step 3: 레이아웃 저장과 변환 최소 구현**
 
 `server/pipeline.py`에 다음 책임을 구현한다.
 
@@ -193,13 +193,13 @@ async def run_convert_pipeline(
     on_update(job)
 ```
 
-- [ ] **Step 4: 일부 실패 테스트 통과 확인**
+- [x] **Step 4: 일부 실패 테스트 통과 확인**
 
 Run: `rtk pytest tests/server/test_pipeline.py::test_convert_keeps_other_pages_when_one_ocr_fails -v`
 
 Expected: PASS.
 
-- [ ] **Step 5: 전체 OCR 실패 테스트 작성**
+- [x] **Step 5: 전체 OCR 실패 테스트 작성**
 
 ```python
 def test_convert_marks_job_failed_when_all_ocr_fails(tmp_path, monkeypatch):
@@ -217,13 +217,13 @@ def test_convert_marks_job_failed_when_all_ocr_fails(tmp_path, monkeypatch):
     assert job.summary.failedPages == 1
 ```
 
-- [ ] **Step 6: 전체 실패 테스트가 올바르게 실패하는지 확인**
+- [x] **Step 6: 전체 실패 테스트가 올바르게 실패하는지 확인**
 
 Run: `rtk pytest tests/server/test_pipeline.py::test_convert_marks_job_failed_when_all_ocr_fails -v`
 
 Expected: FAIL with `JobStatus.DONE != JobStatus.FAILED`.
 
-- [ ] **Step 7: 전체 실패 상태 결정 구현**
+- [x] **Step 7: 전체 실패 상태 결정 구현**
 
 `run_convert_pipeline` 마지막 상태 할당을 다음으로 교체한다.
 
@@ -231,13 +231,13 @@ Expected: FAIL with `JobStatus.DONE != JobStatus.FAILED`.
 job.status = JobStatus.FAILED if failed_count == len(pages) else JobStatus.DONE
 ```
 
-- [ ] **Step 8: 변환 테스트 통과 확인**
+- [x] **Step 8: 변환 테스트 통과 확인**
 
 Run: `rtk pytest tests/server/test_pipeline.py -v`
 
 Expected: 2 passed.
 
-- [ ] **Step 9: 커밋**
+- [x] **Step 9: 커밋**
 
 ```bash
 git add server/pipeline.py tests/server/test_pipeline.py
@@ -256,7 +256,7 @@ git commit -m "feat: add safe server conversion pipeline"
 - Consumes: `select_backend(model: str, backend_name: str | None)`, `correct_paragraphs(paragraphs, model, backend)`, `all_requests_failed(records)`
 - Produces: `run_correct_pipeline(job, job_path, storage, on_update) -> None`
 
-- [ ] **Step 1: 전체 보정 실패 테스트 작성**
+- [x] **Step 1: 전체 보정 실패 테스트 작성**
 
 ```python
 from img2txt.corrector import CorrectionRecord, CorrectionStatus
@@ -282,13 +282,13 @@ def test_correction_failure_preserves_book_and_finishes_job(tmp_path, monkeypatc
     assert job.correctionError
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run: `rtk pytest tests/server/test_pipeline.py::test_correction_failure_preserves_book_and_finishes_job -v`
 
 Expected: FAIL because `run_correct_pipeline` is not defined.
 
-- [ ] **Step 3: 최소 구현**
+- [x] **Step 3: 최소 구현**
 
 ```python
 from img2txt.backends.factory import select_backend
@@ -342,13 +342,13 @@ async def run_correct_pipeline(
         on_update(job)
 ```
 
-- [ ] **Step 4: 파이프라인 테스트 통과 확인**
+- [x] **Step 4: 파이프라인 테스트 통과 확인**
 
 Run: `rtk pytest tests/server/test_pipeline.py -v`
 
 Expected: 3 passed.
 
-- [ ] **Step 5: 커밋**
+- [x] **Step 5: 커밋**
 
 ```bash
 git add server/pipeline.py tests/server/test_pipeline.py
@@ -367,7 +367,7 @@ git commit -m "feat: preserve conversion output on correction failure"
 - Consumes: `run_convert_pipeline`, `run_correct_pipeline`, `JobStorage.save_uploaded_file(job_id, filename, data)`
 - Produces: `JobStore.create_job(files, options) -> str`, `JobStore.get_job(job_id) -> Job | None`, `JobStore.shutdown() -> None`
 
-- [ ] **Step 1: 자연 정렬과 실제 저장 시그니처 테스트 작성**
+- [x] **Step 1: 자연 정렬과 실제 저장 시그니처 테스트 작성**
 
 ```python
 from unittest.mock import MagicMock
@@ -394,13 +394,13 @@ def test_create_job_naturally_sorts_files_and_uses_internal_names(tmp_path):
     store.shutdown()
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run: `rtk pytest tests/server/test_jobs.py::test_create_job_naturally_sorts_files_and_uses_internal_names -v`
 
 Expected: FAIL with `ModuleNotFoundError: No module named 'server.jobs'`.
 
-- [ ] **Step 3: JobStore 최소 구현**
+- [x] **Step 3: JobStore 최소 구현**
 
 ```python
 from __future__ import annotations
@@ -496,13 +496,13 @@ class JobStore:
         self.executor.shutdown(wait=True)
 ```
 
-- [ ] **Step 4: 테스트 통과 확인**
+- [x] **Step 4: 테스트 통과 확인**
 
 Run: `rtk pytest tests/server/test_jobs.py::test_create_job_naturally_sorts_files_and_uses_internal_names -v`
 
 Expected: PASS.
 
-- [ ] **Step 5: 커밋**
+- [x] **Step 5: 커밋**
 
 ```bash
 git add server/jobs.py tests/server/test_jobs.py
@@ -513,6 +513,8 @@ git commit -m "feat: add naturally sorted background job store"
 
 ### Task 4: 기존 산출물을 보존하는 단일 페이지 재시도
 
+> 구현 검토 반영: 아래 최초 계획의 메모리 백업보다 강한 파일 기반 트랜잭션을 적용했다. 실제 구현은 `.retry-transaction.json`과 같은 디스크의 백업 파일을 `fsync`한 뒤 교체하며, 중간 종료도 다음 재시도에서 복구한다.
+
 **Files:**
 - Modify: `server/pipeline.py`
 - Modify: `server/jobs.py`
@@ -521,7 +523,7 @@ git commit -m "feat: add naturally sorted background job store"
 **Interfaces:**
 - Produces: `retry_page_pipeline(job, job_path, page_number, on_update) -> bool`, `JobStore.retry_file(job_id, file_id) -> bool`
 
-- [ ] **Step 1: 재시도 성공 회귀 테스트 작성**
+- [x] **Step 1: 재시도 성공 회귀 테스트 작성**
 
 ```python
 import json
@@ -570,13 +572,13 @@ def test_retry_replaces_only_failed_page_and_preserves_corrected_outputs(tmp_pat
     store.shutdown()
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run: `rtk pytest tests/server/test_jobs.py::test_retry_replaces_only_failed_page_and_preserves_corrected_outputs -v`
 
 Expected: FAIL because `_run_retry` is not defined.
 
-- [ ] **Step 3: 파이프라인 재시도 구현**
+- [x] **Step 3: 파이프라인 재시도 구현**
 
 `server/pipeline.py`에 임시 파일과 백업 복원을 포함해 구현한다.
 
@@ -661,7 +663,7 @@ async def retry_page_pipeline(
         return False
 ```
 
-- [ ] **Step 4: JobStore 재시도 연결**
+- [x] **Step 4: JobStore 재시도 연결**
 
 ```python
 from server.pipeline import retry_page_pipeline
@@ -692,7 +694,7 @@ def _run_retry(self, job_id: str, job_path: Path, page_number: int) -> None:
     self._notify_update(job)
 ```
 
-- [ ] **Step 5: 재시도 실패 보존 테스트 작성**
+- [x] **Step 5: 재시도 실패 보존 테스트 작성**
 
 ```python
 def test_retry_failure_keeps_existing_outputs(tmp_path, monkeypatch):
@@ -731,19 +733,19 @@ def test_retry_failure_keeps_existing_outputs(tmp_path, monkeypatch):
     store.shutdown()
 ```
 
-- [ ] **Step 6: JobStore 테스트 통과 확인**
+- [x] **Step 6: JobStore 테스트 통과 확인**
 
 Run: `rtk pytest tests/server/test_jobs.py -v`
 
 Expected: 3 passed.
 
-- [ ] **Step 7: 전체 서버 핵심 테스트 확인**
+- [x] **Step 7: 전체 서버 핵심 테스트 확인**
 
 Run: `rtk pytest tests/server -v`
 
 Expected: 기존 8개 + 신규 6개 테스트 모두 PASS.
 
-- [ ] **Step 8: 커밋**
+- [x] **Step 8: 커밋**
 
 ```bash
 git add server/pipeline.py server/jobs.py tests/server/test_jobs.py
@@ -760,19 +762,19 @@ git commit -m "feat: add safe single-page OCR retry"
 **Interfaces:**
 - Produces: 기존 계획서 T8/T9에 보완 설계와 실제 구현 경로를 연결하는 기록
 
-- [ ] **Step 1: 전체 비-macOS 테스트 실행**
+- [x] **Step 1: 전체 비-macOS 테스트 실행**
 
 Run: `rtk pytest -m 'not macos' -v`
 
 Expected: 0 failed.
 
-- [ ] **Step 2: 타입 검사 실행**
+- [x] **Step 2: 타입 검사 실행**
 
 Run: `.venv/bin/python -m mypy --strict server/pipeline.py server/jobs.py`
 
 Expected: `Success: no issues found in 2 source files`.
 
-- [ ] **Step 3: 기존 계획서 체크리스트 갱신**
+- [x] **Step 3: 기존 계획서 체크리스트 갱신**
 
 `docs/superpowers/plans/2026-07-08-img2txt-web-service.md`의 Phase 2 체크리스트에서 T8/T9를 완료로 바꾸고, 각 항목 끝에 다음 문구를 붙인다.
 
@@ -780,13 +782,13 @@ Expected: `Success: no issues found in 2 source files`.
 (보완 설계: `docs/superpowers/specs/2026-07-11-t8-t9-safe-retry-design.md`)
 ```
 
-- [ ] **Step 4: 최종 변경 검사**
+- [x] **Step 4: 최종 변경 검사**
 
 Run: `git diff --check && git status --short`
 
 Expected: 공백 오류 없음. `.idea/`, `tobyteam/` 외 의도한 문서 변경만 표시.
 
-- [ ] **Step 5: 문서 커밋**
+- [x] **Step 5: 문서 커밋**
 
 ```bash
 git add docs/superpowers/plans/2026-07-08-img2txt-web-service.md

@@ -60,7 +60,7 @@ JSON에는 `number`, `paragraphs`, `first_is_continuation`, `is_empty`, `removed
 3. `pageNumber`에 해당하는 이미지 한 장만 다시 OCR한다.
 4. 기존 나머지 레이아웃 JSON을 모두 읽어 메모리에서 `book.txt` 새 내용을 만든다.
 5. 새 페이지 TXT, 레이아웃 JSON, `book.txt`를 각각 임시 파일에 쓴다.
-6. 기존 세 파일을 백업한 뒤 교체한다. 교체 중 오류가 나면 백업본으로 되돌린다.
+6. 기존 세 파일을 같은 디스크에 백업하고 원자적으로 복구 표시 파일을 만든 뒤 교체한다. 교체 중 오류가 나거나 작업이 중단되면 다음 실행에서 백업본으로 되돌린다.
 7. 전체 과정이 성공한 뒤에만 재시도 성공으로 기록한다.
 8. 실패하면 임시 파일을 지우고 기존 페이지, 레이아웃, `book.txt`를 유지한다.
 9. `book_corrected.txt`와 `corrections.log`는 수정하지 않는다.
