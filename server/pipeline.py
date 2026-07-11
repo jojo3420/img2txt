@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import tempfile
 from pathlib import Path
 from typing import Callable
 
@@ -33,18 +35,22 @@ def _layout_path(job_path: Path, page_number: int) -> Path:
     return job_path / "output" / "layouts" / f"page-{page_number:03d}.json"
 
 
-def save_stored_layout(path: Path, layout: PageLayout) -> None:
-    """재조립에 필요한 레이아웃 정보만 JSON으로 저장한다."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
+def _stored_layout_payload(layout: PageLayout) -> dict[str, object]:
+    """레이아웃을 JSON 저장용 값으로 바꾼다."""
+    return {
         "number": layout.number,
         "paragraphs": layout.paragraphs,
         "first_is_continuation": layout.first_is_continuation,
         "is_empty": layout.is_empty,
         "removed_footer_lines": len(layout.footer_lines),
     }
+
+
+def save_stored_layout(path: Path, layout: PageLayout) -> None:
+    """재조립에 필요한 레이아웃 정보만 JSON으로 저장한다."""
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        json.dumps(payload, ensure_ascii=False),
+        json.dumps(_stored_layout_payload(layout), ensure_ascii=False),
         encoding="utf-8",
     )
 
@@ -59,6 +65,40 @@ def load_stored_layout(path: Path) -> tuple[PageLayout, int]:
         is_empty=bool(payload["is_empty"]),
     )
     return layout, int(payload["removed_footer_lines"])
+
+
+def _replace_text_outputs(changes: dict[Path, str]) -> None:
+    """여러 텍스트 파일을 교체하고 실패하면 기존 내용으로 되돌린다."""
+    backups = {
+        path: path.read_bytes() if path.exists() else None
+        for path in changes
+    }
+    temporary_paths: dict[Path, Path] = {}
+    try:
+        for target, text in changes.items():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(
+                "w",
+                encoding="utf-8",
+                dir=target.parent,
+                delete=False,
+            ) as handle:
+                handle.write(text)
+                handle.flush()
+                os.fsync(handle.fileno())
+                temporary_paths[target] = Path(handle.name)
+        for target, temporary in temporary_paths.items():
+            os.replace(temporary, target)
+    except Exception:
+        for target, content in backups.items():
+            if content is None:
+                target.unlink(missing_ok=True)
+            else:
+                target.write_bytes(content)
+        raise
+    finally:
+        for temporary in temporary_paths.values():
+            temporary.unlink(missing_ok=True)
 
 
 async def run_convert_pipeline(
@@ -145,6 +185,10 @@ async def run_correct_pipeline(
             job.options.model,
             backend,
         )
+        write_text_file(
+            output_dir / "corrections.log",
+            format_corrections_log(records),
+        )
 
         if all_requests_failed(records):
             job.correctionError = "보정 서비스 요청이 모두 실패했습니다"
@@ -155,10 +199,6 @@ async def run_correct_pipeline(
         write_text_file(
             output_dir / "book_corrected.txt",
             "\n\n".join(corrected),
-        )
-        write_text_file(
-            output_dir / "corrections.log",
-            format_corrections_log(records),
         )
         job.correction = {
             "corrected": sum(
@@ -186,3 +226,80 @@ async def run_correct_pipeline(
         job.correctionError = str(error)
         job.status = JobStatus.DONE
         on_update(job)
+
+
+async def retry_page_pipeline(
+    job: Job,
+    job_path: Path,
+    page_number: int,
+    on_update: UpdateCallback,
+) -> bool:
+    """페이지 하나만 다시 OCR하고 기존 레이아웃과 안전하게 재조립한다."""
+    file_entry = next(
+        (item for item in job.files if item.pageNumber == page_number),
+        None,
+    )
+    if file_entry is None:
+        return False
+
+    image_paths = collect_images(job_path / "uploads")
+    if page_number < 1 or page_number > len(image_paths):
+        file_entry.status = FileStatus.FAILED
+        file_entry.error = "재시도할 페이지 이미지를 찾을 수 없습니다"
+        on_update(job)
+        return False
+
+    file_entry.status = FileStatus.OCR
+    on_update(job)
+    try:
+        page = recognize_page(image_paths[page_number - 1], page_number)
+        replacement = analyze_page(page)
+        layouts: list[PageLayout] = []
+        footer_counts: list[int] = []
+
+        for number in range(1, len(job.files) + 1):
+            if number == page_number:
+                layouts.append(replacement)
+                footer_counts.append(len(replacement.footer_lines))
+            else:
+                layout, footer_count = load_stored_layout(
+                    _layout_path(job_path, number)
+                )
+                layouts.append(layout)
+                footer_counts.append(footer_count)
+
+        page_text = "\n".join(line.text for line in page.lines)
+        layout_text = json.dumps(
+            _stored_layout_payload(replacement),
+            ensure_ascii=False,
+        )
+        _replace_text_outputs(
+            {
+                job_path
+                / "output"
+                / "pages"
+                / f"page-{page_number:03d}.txt": page_text,
+                _layout_path(job_path, page_number): layout_text,
+                job_path / "output" / "book.txt": assemble(layouts),
+            }
+        )
+
+        file_entry.status = FileStatus.DONE
+        file_entry.error = None
+        file_entry.previewText = page_text[:80]
+        if job.summary is not None:
+            job.summary.successPages = sum(
+                1 for item in job.files if item.status is FileStatus.DONE
+            )
+            job.summary.failedPages = sum(
+                1 for item in job.files if item.status is FileStatus.FAILED
+            )
+            job.summary.removedFooterLines = sum(footer_counts)
+        on_update(job)
+        return True
+    except Exception as error:
+        logger.error("페이지 %d 재시도 실패: %s", page_number, error)
+        file_entry.status = FileStatus.FAILED
+        file_entry.error = str(error)
+        on_update(job)
+        return False

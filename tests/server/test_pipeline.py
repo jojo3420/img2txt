@@ -116,5 +116,8 @@ def test_correction_failure_preserves_book_and_finishes_job(
 
     assert book.read_text(encoding="utf-8") == "원문"
     assert not (output / "book_corrected.txt").exists()
+    assert "상태=실패" in (output / "corrections.log").read_text(
+        encoding="utf-8"
+    )
     assert job.status is JobStatus.DONE
     assert job.correctionError
