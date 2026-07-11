@@ -184,19 +184,19 @@ def test_retry_recovers_outputs_after_interrupted_replacement(
         ),
     )
     real_replace = os.replace
-    replace_count = 0
 
     class SimulatedCrash(BaseException):
         pass
 
-    def crash_on_second_replace(source: Path, target: Path) -> None:
-        nonlocal replace_count
-        replace_count += 1
-        if replace_count == 2:
+    def crash_while_replacing_layout(source: Path, target: Path) -> None:
+        if Path(target) == layout_path:
             raise SimulatedCrash("process stopped")
         real_replace(source, target)
 
-    monkeypatch.setattr("server.pipeline.os.replace", crash_on_second_replace)
+    monkeypatch.setattr(
+        "server.pipeline.os.replace",
+        crash_while_replacing_layout,
+    )
     before = {
         page_path: page_path.read_bytes(),
         layout_path: layout_path.read_bytes(),

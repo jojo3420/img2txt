@@ -113,6 +113,7 @@ def _recover_pending_replacement(output_dir: Path) -> None:
         backup_name = entry["backup"]
         if backup_name is None:
             target.unlink(missing_ok=True)
+            _fsync_directory(target.parent)
             continue
         backup = output_dir / str(backup_name)
         if not backup.exists():
@@ -123,7 +124,10 @@ def _recover_pending_replacement(output_dir: Path) -> None:
     marker.unlink()
     _fsync_directory(output_dir)
     for backup in backup_paths:
-        backup.unlink(missing_ok=True)
+        try:
+            backup.unlink(missing_ok=True)
+        except OSError as error:
+            logger.warning("복구 백업 정리 실패: %s", error)
 
 
 def _replace_text_outputs(changes: dict[Path, str]) -> None:
@@ -146,6 +150,7 @@ def _replace_text_outputs(changes: dict[Path, str]) -> None:
                 handle.write(target.read_bytes())
                 handle.flush()
                 os.fsync(handle.fileno())
+            _fsync_directory(backup.parent)
             backup_paths.append(backup)
         entries.append(
             {
@@ -159,11 +164,11 @@ def _replace_text_outputs(changes: dict[Path, str]) -> None:
         )
 
     marker = output_dir / _RETRY_MARKER
-    with marker.open("w", encoding="utf-8") as handle:
-        json.dump({"entries": entries}, handle, ensure_ascii=False)
-        handle.flush()
-        os.fsync(handle.fileno())
-    _fsync_directory(output_dir)
+    marker_content = json.dumps(
+        {"entries": entries},
+        ensure_ascii=False,
+    ).encode("utf-8")
+    _write_bytes_durable(marker, marker_content)
 
     temporary_paths: dict[Path, Path] = {}
     try:
@@ -186,10 +191,17 @@ def _replace_text_outputs(changes: dict[Path, str]) -> None:
         _recover_pending_replacement(output_dir)
         raise
     else:
-        marker.unlink()
-        _fsync_directory(output_dir)
+        try:
+            marker.unlink()
+            _fsync_directory(output_dir)
+        except Exception:
+            _recover_pending_replacement(output_dir)
+            raise
         for backup in backup_paths:
-            backup.unlink(missing_ok=True)
+            try:
+                backup.unlink(missing_ok=True)
+            except OSError as error:
+                logger.warning("커밋된 재시도 백업 정리 실패: %s", error)
     finally:
         for temporary in temporary_paths.values():
             temporary.unlink(missing_ok=True)
