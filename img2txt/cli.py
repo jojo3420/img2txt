@@ -3,10 +3,13 @@ from __future__ import annotations
 
 import argparse
 import logging
+import shutil
 import sys
 from pathlib import Path
 
 from img2txt.assembler import assemble
+from img2txt.backends.cli import ClaudeBackend, CodexBackend
+from img2txt.backends.ollama import OllamaBackend
 from img2txt.corrector import (
     OLLAMA_BASE_URL,
     CorrectionStatus,
@@ -41,10 +44,36 @@ def build_parser() -> argparse.ArgumentParser:
     convert.add_argument("-v", "--verbose", action="store_true", help="DEBUG 로그")
     correct = subparsers.add_parser("correct", help="연속본 txt -> LLM 보정본")
     correct.add_argument("input_file", help="convert가 만든 연속본 txt (book.txt 등)")
-    correct.add_argument("--model", default=DEFAULT_MODEL, help="Ollama 모델명")
+    correct.add_argument("--backend", choices=["codex", "claude", "ollama"], default="codex",
+                         help="보정 백엔드 (기본: codex)")
+    correct.add_argument("--model", default=None, help="모델명 (ollama 전용, codex/claude는 내부 모델 사용)")
     correct.add_argument("-o", "--output", default=None, help="출력 폴더 (기본: 입력 파일 폴더)")
     correct.add_argument("-v", "--verbose", action="store_true", help="DEBUG 로그")
     return parser
+
+
+def check_backend_availability(backend: str, model: str | None) -> str | None:
+    """백엔드 가용성을 점검한다.
+
+    Args:
+        backend: 백엔드 이름 (codex, claude, ollama).
+        model: 모델명 (ollama만 필요).
+
+    Returns:
+        문제 있으면 안내 메시지, 정상이면 None.
+    """
+    if backend in ("codex", "claude"):
+        cli_name = backend
+        if not shutil.which(cli_name):
+            return f"명령 '{cli_name}'을 찾을 수 없습니다. {cli_name} CLI를 설치하세요."
+        return None
+
+    if backend == "ollama":
+        if not model:
+            return "ollama 백엔드는 --model 옵션이 필수입니다."
+        return check_server(OLLAMA_BASE_URL, model)
+
+    return None
 
 
 def run_convert(args: argparse.Namespace) -> int:
@@ -99,17 +128,32 @@ def run_correct(args: argparse.Namespace) -> int:
         return EXIT_ERROR
     output_dir = Path(args.output) if args.output else input_path.parent
 
-    error_message = check_server(OLLAMA_BASE_URL, args.model)
+    # 백엔드 가용성 점검
+    error_message = check_backend_availability(args.backend, args.model)
     if error_message:
         logger.error(error_message)
         return EXIT_ERROR
 
+    # 백엔드 팩토리
+    if args.backend == "codex":
+        backend = CodexBackend()
+        model = "gpt-5.5"
+    elif args.backend == "claude":
+        backend = ClaudeBackend()
+        model = "claude"
+    elif args.backend == "ollama":
+        backend = OllamaBackend()
+        model = args.model
+    else:
+        logger.error("미지원 백엔드: %s", args.backend)
+        return EXIT_ERROR
+
     text = input_path.read_text(encoding="utf-8")
     paragraphs = [p for p in text.split("\n\n") if p.strip()]
-    corrected, records = correct_paragraphs(paragraphs, model=args.model)
+    corrected, records = correct_paragraphs(paragraphs, model=model, backend=backend)
 
     if all_requests_failed(records):
-        logger.error("전체 문단 보정 요청이 실패했습니다 (정상 응답 0건). Ollama 상태를 확인하세요.")
+        logger.error("전체 문단 보정 요청이 실패했습니다 (정상 응답 0건). 백엔드 상태를 확인하세요.")
         return EXIT_ERROR
 
     write_text_file(output_dir / CORRECTED_FILENAME, "\n\n".join(corrected))

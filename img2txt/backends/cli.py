@@ -53,7 +53,9 @@ class CliBackend:
         if self.cli_name == "claude":
             cmd = ["claude", "-p", prompt]
         elif self.cli_name == "codex":
-            cmd = ["codex", "exec", "-m", "gpt-5.5", "--output-last-message", prompt]
+            # prompt는 위치 인자 [PROMPT]. --output-last-message는 파일 경로 옵션이므로
+            # prompt를 그 값으로 넘기면 프롬프트가 파일 경로로 오해석된다.
+            cmd = ["codex", "exec", "-m", "gpt-5.5", prompt]
         else:
             raise ValueError(f"미지원 CLI: {self.cli_name}")
 
@@ -64,6 +66,7 @@ class CliBackend:
                 text=True,
                 timeout=self.timeout_sec,
                 env=os.environ.copy(),  # 환경 변수 전파
+                stdin=subprocess.DEVNULL,  # stdin 상속 시 codex가 입력 대기로 행(hang)
             )
             # CLI 실패 처리
             if result.returncode != 0:
