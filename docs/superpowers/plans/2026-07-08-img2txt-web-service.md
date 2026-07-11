@@ -2324,8 +2324,8 @@ async def download_book(job_id: str, type: str = "book") -> StreamingResponse:
 **Phase 2 완료 검증 체크리스트**
 - [ ] T6 config.py + models.py: Pydantic 스키마 (스펙 7.1과 정확히 일치)
 - [ ] T7 storage.py: 안전 파일명 + 경로 조작 차단 (테스트 4개 PASS)
-- [ ] T8 pipeline.py: 변환 + 보정 오케스트레이션 (무중단)
-- [ ] T9 jobs.py: JobStore + 백그라운드 + 동시성 제한 + retry
+- [x] T8 pipeline.py: 변환 + 보정 오케스트레이션 (무중단) (보완 설계: `docs/superpowers/specs/2026-07-11-t8-t9-safe-retry-design.md`)
+- [x] T9 jobs.py: JobStore + 백그라운드 + 동시성 제한 + retry (보완 설계: `docs/superpowers/specs/2026-07-11-t8-t9-safe-retry-design.md`)
 - [ ] T10 routes.py + app.py: 엔드포인트 계약 + 검증
 
 **Phase 2 마이너 아웃풋**
@@ -3290,4 +3290,3 @@ git log --oneline | head -20  # 전체 태스크 커밋 히스토리 확인
 
 ### 결론
 스펙 7절과 기존 img2txt 로직을 정확히 재사용한 완전한 백엔드-프런트 구현 계획서. 모든 15개 태스크가 TDD 스텝(테스트→실패→구현→통과→커밋)과 실행 가능한 코드 포함. E2E 테스트 플랜으로 macOS 검증 절차도 문서화됨. 향후 Phase 5 (API 백엔드 정식 구현, WebSocket, DB 영속화) 예약.
-
