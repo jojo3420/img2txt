@@ -3,9 +3,10 @@ import asyncio
 from pathlib import Path
 from unittest.mock import MagicMock
 
+from img2txt.corrector import CorrectionRecord, CorrectionStatus
 from img2txt.ocr import OcrLine, Page
 from server.models import FileStatus, Job, JobOptions, JobStatus, PageFile
-from server.pipeline import run_convert_pipeline
+from server.pipeline import run_convert_pipeline, run_correct_pipeline
 from server.storage import JobStorage
 
 
@@ -83,3 +84,37 @@ def test_convert_marks_job_failed_when_all_ocr_fails(
     assert job.status is JobStatus.FAILED
     assert job.summary is not None
     assert job.summary.failedPages == 1
+
+
+def test_correction_failure_preserves_book_and_finishes_job(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    output = tmp_path / "output"
+    output.mkdir()
+    book = output / "book.txt"
+    book.write_text("원문", encoding="utf-8")
+    job = _job(1)
+    job.status = JobStatus.DONE
+    record = CorrectionRecord(
+        1,
+        CorrectionStatus.FAILED,
+        "실패",
+        "gpt-5.5",
+        "원문",
+        "원문",
+    )
+    monkeypatch.setattr("server.pipeline.select_backend", lambda *_args: object())
+    monkeypatch.setattr(
+        "server.pipeline.correct_paragraphs",
+        lambda *_args: (["원문"], [record]),
+    )
+
+    asyncio.run(
+        run_correct_pipeline(job, tmp_path, JobStorage(tmp_path), MagicMock())
+    )
+
+    assert book.read_text(encoding="utf-8") == "원문"
+    assert not (output / "book_corrected.txt").exists()
+    assert job.status is JobStatus.DONE
+    assert job.correctionError

@@ -7,10 +7,20 @@ from pathlib import Path
 from typing import Callable
 
 from img2txt.assembler import assemble
+from img2txt.backends.factory import select_backend
+from img2txt.corrector import (
+    CorrectionStatus,
+    all_requests_failed,
+    correct_paragraphs,
+)
 from img2txt.layout import PageLayout, analyze_page
 from img2txt.ocr import Page, recognize_page
 from img2txt.scanner import collect_images
-from img2txt.writer import write_page_texts, write_text_file
+from img2txt.writer import (
+    format_corrections_log,
+    write_page_texts,
+    write_text_file,
+)
 from server.models import FileStatus, Job, JobStatus, JobSummary
 from server.storage import JobStorage
 
@@ -105,3 +115,74 @@ async def run_convert_pipeline(
         JobStatus.FAILED if failed_count == len(pages) else JobStatus.DONE
     )
     on_update(job)
+
+
+async def run_correct_pipeline(
+    job: Job,
+    job_path: Path,
+    storage: JobStorage,
+    on_update: UpdateCallback,
+) -> None:
+    """연속본을 보정하되 실패하면 기존 변환 결과를 보존한다."""
+    del storage  # T9와 공유하는 공개 인터페이스를 유지한다.
+    output_dir = job_path / "output"
+    book_path = output_dir / "book.txt"
+
+    try:
+        paragraphs = [
+            part
+            for part in book_path.read_text(encoding="utf-8").split("\n\n")
+            if part.strip()
+        ]
+        if not paragraphs:
+            raise ValueError("처리할 문단이 없습니다")
+
+        job.phase = "correcting"
+        on_update(job)
+        backend = select_backend(job.options.model, job.options.backend)
+        corrected, records = correct_paragraphs(
+            paragraphs,
+            job.options.model,
+            backend,
+        )
+
+        if all_requests_failed(records):
+            job.correctionError = "보정 서비스 요청이 모두 실패했습니다"
+            job.status = JobStatus.DONE
+            on_update(job)
+            return
+
+        write_text_file(
+            output_dir / "book_corrected.txt",
+            "\n\n".join(corrected),
+        )
+        write_text_file(
+            output_dir / "corrections.log",
+            format_corrections_log(records),
+        )
+        job.correction = {
+            "corrected": sum(
+                1 for record in records
+                if record.status is CorrectionStatus.CORRECTED
+            ),
+            "kept": sum(
+                1 for record in records
+                if record.status is CorrectionStatus.KEPT
+            ),
+            "guardBlocked": sum(
+                1 for record in records
+                if record.status is CorrectionStatus.GUARD_BLOCKED
+            ),
+        }
+        if job.summary is not None:
+            job.summary.corrected = job.correction["corrected"]
+            job.summary.kept = job.correction["kept"]
+            job.summary.guardBlocked = job.correction["guardBlocked"]
+        job.correctionError = None
+        job.status = JobStatus.DONE
+        on_update(job)
+    except Exception as error:
+        logger.error("보정 파이프라인 실패: %s", error)
+        job.correctionError = str(error)
+        job.status = JobStatus.DONE
+        on_update(job)
