@@ -46,3 +46,40 @@ def test_create_job_rejects_non_jpeg(client: TestClient) -> None:
     )
 
     assert resp.status_code == 400
+
+
+def test_create_job_passes_form_options_to_store(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """폼 필드 값(correct, backend)이 JobStore.create_job에 전달된다."""
+    from unittest.mock import MagicMock
+    from server.app import create_app
+    from server.jobs import JobStore
+
+    # JobStore 모킹
+    mock_store = MagicMock(spec=JobStore)
+    mock_store.create_job.return_value = "job-123"
+
+    app = create_app()
+    app.state.job_store = mock_store
+
+    client = TestClient(app)
+    jpeg_data = b"\xff\xd8\xff\xe0" + b"\x00" * 100 + b"\xff\xd9"
+
+    # correct=true, backend=claude로 요청
+    resp = client.post(
+        "/api/jobs",
+        data={"correct": "true", "backend": "claude"},
+        files={"files": ("test.jpg", jpeg_data, "image/jpeg")},
+    )
+
+    assert resp.status_code == 201
+
+    # create_job이 호출되었는지 확인
+    assert mock_store.create_job.called
+    _, options = mock_store.create_job.call_args[0]
+
+    # 폼 값이 정확히 전달되었는지 검증
+    assert options.correct is True, "correct=true가 전달되지 않음"
+    assert options.backend == "claude", "backend=claude가 전달되지 않음"
+    assert options.model == "claude", "model이 claude로 파생되지 않음"

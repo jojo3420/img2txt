@@ -2,7 +2,7 @@
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 
 from server.config import UPLOAD_MAX_BYTES_PER_FILE, UPLOAD_MAX_FILES, UPLOAD_MAX_TOTAL_BYTES
 from server.jobs import JobStore
@@ -50,15 +50,15 @@ def _is_jpeg_magic(data: bytes) -> bool:
 @router.post("/jobs", status_code=201, response_model=CreateJobResponse)
 def create_job_route(
     files: list[UploadFile] = File(...),
-    correct: str = Query("false"),
-    backend: str = Query("codex"),
+    correct: bool = Form(False),
+    backend: str = Form("codex"),
     store: JobStore = Depends(get_store),
 ) -> CreateJobResponse:
     """파일을 업로드하고 새 잡을 생성한다.
 
     Args:
         files: 업로드할 이미지 파일 목록
-        correct: 보정 활성 여부 ("true" 또는 "false")
+        correct: 보정 활성 여부
         backend: 사용할 백엔드 ("codex" 또는 "claude")
         store: JobStore 인스턴스
 
@@ -71,10 +71,8 @@ def create_job_route(
     if len(files) > UPLOAD_MAX_FILES:
         raise HTTPException(400, "too many files")
 
-    correct_bool = correct.lower() == "true"
-
     # correct=false일 때 backend를 codex로 고정
-    if not correct_bool:
+    if not correct:
         backend = "codex"
 
     # backend 검증
@@ -109,7 +107,7 @@ def create_job_route(
 
     # JobOptions 생성
     options = JobOptions(
-        correct=correct_bool,
+        correct=correct,
         backend=backend,
         model=_MODEL_BY_BACKEND[backend],
     )
