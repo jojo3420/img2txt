@@ -23,7 +23,8 @@ export interface JobSummary {
 
 export interface JobOptions {
   correct: boolean; // LLM 보정까지 실행할지 여부
-  model: string; // 예: "qwen3:14b"
+  backend: "codex" | "claude"; // OCR/보정 백엔드
+  model: string; // 읽기 전용, 백엔드에서 파생 (예: "gpt-5.5", "claude")
 }
 
 export interface Job {
@@ -33,6 +34,10 @@ export interface Job {
   status: JobStatus;
   files: PageFile[];
   summary?: JobSummary;
+  phase: "ocr" | "correcting";
+  correction: { done: number; total: number } | null;
+  correctionError: string | null;
+  correctedStale: boolean;
 }
 
 export interface PageDetail {

@@ -67,9 +67,9 @@ export default function JobPage() {
       <section className="space-y-3 rounded-xl border border-zinc-100 dark:border-zinc-800 p-5">
         <div className="flex items-baseline justify-between">
           <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            {total}개 중 {doneCount}개 완료
+            {job.phase === "correcting" ? "보정 중" : "OCR 중"} - {total}개 중 {doneCount}개 완료
             {failedCount > 0 && (
-              <span className="text-red-500"> · {failedCount}개 실패</span>
+              <span className="text-red-500"> - {failedCount}개 실패</span>
             )}
           </p>
           {!isFinished && (
@@ -79,7 +79,29 @@ export default function JobPage() {
           )}
         </div>
         <ProgressBar value={percent} />
+        {job.correction && (
+          <div className="space-y-1 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+              보정: {job.correction.done} / {job.correction.total}
+            </p>
+            <ProgressBar value={(job.correction.done / job.correction.total) * 100} />
+          </div>
+        )}
       </section>
+
+      {job.correctionError && (
+        <div className="flex items-center gap-2 rounded-lg bg-red-50 dark:bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-400">
+          <AlertTriangle size={16} className="shrink-0" />
+          보정 건너뜀: {job.correctionError}
+        </div>
+      )}
+
+      {job.correctedStale && (
+        <div className="flex items-center gap-2 rounded-lg bg-amber-50 dark:bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
+          <AlertTriangle size={16} className="shrink-0" />
+          보정본이 최신 변환과 다를 수 있습니다.
+        </div>
+      )}
 
       {failedCount > 0 && (
         <div className="flex items-center gap-2 rounded-lg bg-amber-50 dark:bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">

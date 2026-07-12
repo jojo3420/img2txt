@@ -1,17 +1,16 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { ChevronDown, ChevronRight, Download, FileWarning } from "lucide-react";
-import { downloadBook, downloadPage, useJob, usePage } from "../api/client";
+import { useJob, usePage } from "../api/client";
 import ErrorState from "../components/ErrorState";
 import EmptyState from "../components/EmptyState";
-import Button from "../components/Button";
 import Spinner from "../components/Spinner";
 import { SkeletonList } from "../components/Skeleton";
 
 export default function ResultPage() {
   const { jobId } = useParams<{ jobId: string }>();
   const { data: job, isLoading, isError, error, refetch } = useJob(jobId);
-  const [expanded, setExpanded] = useState<number | null>(null);
+  const [expanded, setExpanded] = useState<"book" | "corrected" | number | null>(null);
 
   if (isLoading) {
     return (
@@ -74,22 +73,79 @@ export default function ResultPage() {
       )}
 
       <section className="flex flex-wrap gap-3">
-        <Button
-          variant="secondary"
-          icon={<Download size={15} />}
-          onClick={() => downloadBook(job.id, "book")}
+        <a
+          href={`/api/jobs/${job.id}/download?type=book`}
+          download
+          className="inline-flex items-center gap-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 px-4 py-2 text-sm font-medium text-zinc-900 dark:text-zinc-50 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
         >
-          book.txt (원본 연속본)
-        </Button>
+          <Download size={15} />
+          book.txt (원본 연속본) 다운로드
+        </a>
         {job.options.correct && (
-          <Button
-            icon={<Download size={15} />}
-            onClick={() => downloadBook(job.id, "corrected")}
+          <a
+            href={`/api/jobs/${job.id}/download?type=corrected`}
+            download
+            className="inline-flex items-center gap-2 rounded-lg bg-zinc-900 dark:bg-zinc-100 px-4 py-2 text-sm font-medium text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-colors"
           >
-            book_corrected.txt (보정본)
-          </Button>
+            <Download size={15} />
+            book_corrected.txt (보정본) 다운로드
+          </a>
+        )}
+        {job.options.correct && (
+          <a
+            href={`/api/jobs/${job.id}/download?type=corrections`}
+            download
+            className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 dark:border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+          >
+            <Download size={15} />
+            corrections.log 다운로드
+          </a>
         )}
       </section>
+
+      {summary && (
+        <section className="space-y-4 rounded-xl border border-zinc-100 dark:border-zinc-800 p-5">
+          <h2 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+            책 전체 비교
+          </h2>
+          <div className="space-y-2">
+            <button
+              type="button"
+              onClick={() => setExpanded(expanded === "book" ? null : "book")}
+              className="w-full flex items-center gap-3 text-left rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-800/40 px-3 py-2 transition-colors -mx-3"
+            >
+              {expanded === "book" ? (
+                <ChevronDown size={16} className="shrink-0 text-zinc-400" />
+              ) : (
+                <ChevronRight size={16} className="shrink-0 text-zinc-400" />
+              )}
+              <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                원본 (book.txt)
+              </span>
+            </button>
+            {expanded === "book" && <BookViewer jobId={job.id} type="book" />}
+          </div>
+          {job.options.correct && (
+            <div className="space-y-2 border-t border-zinc-100 dark:border-zinc-800 pt-4">
+              <button
+                type="button"
+                onClick={() => setExpanded(expanded === "corrected" ? null : "corrected")}
+                className="w-full flex items-center gap-3 text-left rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-800/40 px-3 py-2 transition-colors -mx-3"
+              >
+                {expanded === "corrected" ? (
+                  <ChevronDown size={16} className="shrink-0 text-zinc-400" />
+                ) : (
+                  <ChevronRight size={16} className="shrink-0 text-zinc-400" />
+                )}
+                <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                  보정본 (book_corrected.txt)
+                </span>
+              </button>
+              {expanded === "corrected" && <BookViewer jobId={job.id} type="corrected" />}
+            </div>
+          )}
+        </section>
+      )}
 
       <section className="space-y-2">
         <h2 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
@@ -155,6 +211,47 @@ function SummaryStat({
   );
 }
 
+function BookViewer({ jobId, type }: { jobId: string; type: "book" | "corrected" }) {
+  const [text, setText] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isError, setIsError] = useState(false);
+
+  useEffect(() => {
+    const fetchText = async () => {
+      try {
+        const response = await fetch(`/api/jobs/${jobId}/download?type=${type}`);
+        if (!response.ok) throw new Error("Failed to load text");
+        const content = await response.text();
+        setText(content);
+      } catch {
+        setIsError(true);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchText();
+  }, [jobId, type]);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center gap-2 py-6 text-sm text-zinc-400">
+        <Spinner size={16} />
+        불러오는 중...
+      </div>
+    );
+  }
+
+  if (isError || !text) {
+    return <ErrorState message="텍스트를 불러오지 못했습니다." />;
+  }
+
+  return (
+    <pre className="whitespace-pre-wrap break-keep rounded-lg bg-zinc-50 dark:bg-zinc-900 p-4 text-sm leading-relaxed text-zinc-700 dark:text-zinc-300 font-sans overflow-auto max-h-96">
+      {text}
+    </pre>
+  );
+}
+
 function PageRow({
   jobId,
   pageNumber,
@@ -196,18 +293,15 @@ function PageRow({
         <span className="flex-1 min-w-0 truncate text-sm text-zinc-500 dark:text-zinc-400">
           {previewText || "미리보기 없음"}
         </span>
-        <span
-          role="button"
-          tabIndex={0}
-          onClick={(e) => {
-            e.stopPropagation();
-            downloadPage(jobId, pageNumber);
-          }}
+        <a
+          href={`/api/jobs/${jobId}/pages/${pageNumber}/download`}
+          download
+          onClick={(e) => e.stopPropagation()}
           className="shrink-0 inline-flex items-center gap-1 rounded-lg border border-zinc-200 dark:border-zinc-700 px-2.5 py-1 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
         >
           <Download size={12} />
           page-{String(pageNumber).padStart(3, "0")}.txt
-        </span>
+        </a>
       </button>
 
       {expanded && (

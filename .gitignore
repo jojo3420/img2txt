@@ -5,3 +5,9 @@ __pycache__/
 .omc/
 .serena/
 .worktrees/
+jobs/
+docs/prototype/img2txt-web/dist/
+# 프런트 빌드 부산물 (tsc가 vite.config.ts 컴파일)
+docs/prototype/img2txt-web/vite.config.js
+docs/prototype/img2txt-web/vite.config.d.ts
+docs/prototype/img2txt-web/*.tsbuildinfo
