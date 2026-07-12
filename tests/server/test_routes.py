@@ -13,6 +13,7 @@ def client(tmp_path: Path, monkeypatch) -> TestClient:
     from server.jobs import JobStore
 
     monkeypatch.setattr("server.config.JOBS_ROOT", tmp_path / "jobs")
+    monkeypatch.setattr("server.routes.JOBS_ROOT", tmp_path / "jobs")
     app = create_app()
     # 명시적으로 JobStore 설정
     app.state.job_store = JobStore(tmp_path / "jobs", 2)
@@ -266,3 +267,97 @@ def test_intent_rejects_email_without_domain(client: TestClient) -> None:
     resp = client.post("/api/intent", json={"email": "user@domain"})
 
     assert resp.status_code == 400
+
+
+def test_page_download_404_missing_page(client: TestClient) -> None:
+    """존재하지 않는 페이지를 다운로드 요청하면 404를 반환한다."""
+    from unittest.mock import MagicMock
+    from server.models import FileStatus
+
+    client.app.state.job_store.get_job = MagicMock(
+        return_value=_one_file_job(FileStatus.DONE)
+    )
+
+    resp = client.get("/api/jobs/job-1/pages/99/download")
+
+    assert resp.status_code == 404
+
+
+def test_page_download_200_with_content_disposition(
+    tmp_path: Path, client: TestClient
+) -> None:
+    """페이지 다운로드는 200과 Content-Disposition 헤더를 반환한다."""
+    from unittest.mock import MagicMock
+    from server.models import FileStatus
+
+    # 테스트 파일 생성
+    job_dir = tmp_path / "jobs" / "job-1" / "output" / "pages"
+    job_dir.mkdir(parents=True, exist_ok=True)
+    (job_dir / "page-001.txt").write_text("페이지 텍스트", encoding="utf-8")
+
+    client.app.state.job_store.get_job = MagicMock(
+        return_value=_one_file_job(FileStatus.DONE)
+    )
+
+    resp = client.get("/api/jobs/job-1/pages/1/download")
+
+    assert resp.status_code == 200
+    assert "content-disposition" in resp.headers
+    assert "2026-07-12-a-1.txt" in resp.headers["content-disposition"]
+    assert resp.text == "페이지 텍스트"
+
+
+def test_download_book_200_with_content_disposition(
+    tmp_path: Path, client: TestClient
+) -> None:
+    """연속본 다운로드는 200과 올바른 파일명을 반환한다."""
+    from unittest.mock import MagicMock
+    from server.models import FileStatus
+
+    # 테스트 파일 생성
+    job_dir = tmp_path / "jobs" / "job-1" / "output"
+    job_dir.mkdir(parents=True, exist_ok=True)
+    (job_dir / "book.txt").write_text("연속본 텍스트", encoding="utf-8")
+
+    client.app.state.job_store.get_job = MagicMock(
+        return_value=_one_file_job(FileStatus.DONE)
+    )
+
+    resp = client.get("/api/jobs/job-1/download?type=book")
+
+    assert resp.status_code == 200
+    assert "content-disposition" in resp.headers
+    assert "2026-07-12-a-book.txt" in resp.headers["content-disposition"]
+    assert resp.text == "연속본 텍스트"
+
+
+def test_download_corrected_404_when_correct_false(
+    tmp_path: Path, client: TestClient
+) -> None:
+    """correct=false인 잡에 보정본 다운로드를 요청하면 404를 반환한다."""
+    from unittest.mock import MagicMock
+    from server.models import FileStatus
+
+    client.app.state.job_store.get_job = MagicMock(
+        return_value=_one_file_job(FileStatus.DONE)
+    )
+
+    resp = client.get("/api/jobs/job-1/download?type=corrected")
+
+    assert resp.status_code == 404
+
+
+def test_download_book_409_when_processing(
+    tmp_path: Path, client: TestClient
+) -> None:
+    """처리 중인 잡에서 book 다운로드를 요청하면 409를 반환한다."""
+    from unittest.mock import MagicMock
+    from server.models import JobStatus, FileStatus
+
+    job = _one_file_job(FileStatus.DONE)
+    job.status = JobStatus.PROCESSING
+    client.app.state.job_store.get_job = MagicMock(return_value=job)
+
+    resp = client.get("/api/jobs/job-1/download?type=book")
+
+    assert resp.status_code == 409
