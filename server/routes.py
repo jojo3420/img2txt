@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 
 from server.config import UPLOAD_MAX_BYTES_PER_FILE, UPLOAD_MAX_FILES, UPLOAD_MAX_TOTAL_BYTES
 from server.jobs import JobStore
-from server.models import CreateJobResponse, Job, JobOptions
+from server.models import CreateJobResponse, Job, JobOptions, JobStatus, PageDetail
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -161,3 +161,35 @@ def retry_route(
     if not store.retry_file(job_id, file_id):
         raise HTTPException(409, "file is not retryable")
     return {"status": "ok"}
+
+
+@router.get("/jobs/{job_id}/pages/{n}", response_model=PageDetail)
+def page_detail_route(
+    job_id: str, n: int, store: JobStore = Depends(get_store)
+) -> PageDetail:
+    """페이지 원본 텍스트를 반환한다(보정본은 항상 null).
+
+    Args:
+        job_id: 조회할 잡 ID
+        n: 페이지 번호
+        store: JobStore 인스턴스
+
+    Returns:
+        페이지 상세 정보
+
+    Raises:
+        HTTPException: 잡이 없으면 404, 페이지가 없으면 404
+    """
+    job = store.get_job(job_id)
+    if job is None:
+        raise HTTPException(404, "job not found")
+    entry = next((f for f in job.files if f.pageNumber == n), None)
+    if entry is None:
+        raise HTTPException(404, "page not found")
+    try:
+        original = store.storage.read_output_file(job_id, f"output/pages/page-{n:03d}.txt")
+    except FileNotFoundError:
+        if job.status is JobStatus.PROCESSING:
+            raise HTTPException(409, "page not ready")
+        raise HTTPException(404, "page not available")
+    return PageDetail(pageNumber=n, filename=entry.filename, original=original, corrected=None)

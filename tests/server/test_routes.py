@@ -194,3 +194,53 @@ def test_retry_200_success(client: TestClient) -> None:
 
     assert resp.status_code == 200
     assert resp.json() == {"status": "ok"}
+
+
+def test_page_detail_404_missing_job(client: TestClient) -> None:
+    """존재하지 않는 잡에 대한 페이지 조회 요청하면 404를 반환한다."""
+    from unittest.mock import MagicMock
+
+    client.app.state.job_store.get_job = MagicMock(return_value=None)
+
+    resp = client.get("/api/jobs/nonexistent/pages/1")
+
+    assert resp.status_code == 404
+
+
+def test_page_detail_404_missing_page(client: TestClient) -> None:
+    """존재하지 않는 페이지를 조회하면 404를 반환한다."""
+    from unittest.mock import MagicMock
+    from server.models import FileStatus
+
+    client.app.state.job_store.get_job = MagicMock(
+        return_value=_one_file_job(FileStatus.DONE)
+    )
+
+    resp = client.get("/api/jobs/job-1/pages/99")
+
+    assert resp.status_code == 404
+
+
+def test_page_detail_returns_page_with_original_and_null_corrected(
+    tmp_path: Path, client: TestClient
+) -> None:
+    """페이지 상세 조회는 원본 텍스트를 반환하고 corrected는 null이다."""
+    from unittest.mock import MagicMock
+    from server.models import FileStatus
+
+    # 테스트 파일 생성
+    job_dir = tmp_path / "jobs" / "job-1" / "output" / "pages"
+    job_dir.mkdir(parents=True, exist_ok=True)
+    (job_dir / "page-001.txt").write_text("OCR 결과 텍스트", encoding="utf-8")
+
+    client.app.state.job_store.get_job = MagicMock(
+        return_value=_one_file_job(FileStatus.DONE)
+    )
+
+    resp = client.get("/api/jobs/job-1/pages/1")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["pageNumber"] == 1
+    assert data["original"] == "OCR 결과 텍스트"
+    assert data["corrected"] is None
