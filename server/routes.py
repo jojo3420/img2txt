@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 
 from server.config import UPLOAD_MAX_BYTES_PER_FILE, UPLOAD_MAX_FILES, UPLOAD_MAX_TOTAL_BYTES
 from server.jobs import JobStore
-from server.models import CreateJobResponse, JobOptions
+from server.models import CreateJobResponse, Job, JobOptions
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -114,3 +114,23 @@ def create_job_route(
 
     job_id = store.create_job(collected, options)
     return CreateJobResponse(id=job_id)
+
+
+@router.get("/jobs/{job_id}", response_model=Job)
+def get_job_route(job_id: str, store: JobStore = Depends(get_store)) -> Job:
+    """잡 상태를 반환한다.
+
+    Args:
+        job_id: 조회할 잡 ID
+        store: JobStore 인스턴스
+
+    Returns:
+        잡 정보
+
+    Raises:
+        HTTPException: 잡이 없으면 404
+    """
+    job = store.get_job(job_id)
+    if job is None:
+        raise HTTPException(404, "job not found")
+    return job

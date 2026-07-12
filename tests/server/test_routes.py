@@ -83,3 +83,40 @@ def test_create_job_passes_form_options_to_store(
     assert options.correct is True, "correct=true가 전달되지 않음"
     assert options.backend == "claude", "backend=claude가 전달되지 않음"
     assert options.model == "claude", "model이 claude로 파생되지 않음"
+
+
+def test_get_job_returns_existing_job(client: TestClient) -> None:
+    """존재하는 잡을 조회하면 200과 Job 정보를 반환한다."""
+    from unittest.mock import MagicMock
+    from server.models import Job, JobOptions, JobStatus
+
+    # 테스트용 Job 객체
+    job = Job(
+        id="job-1",
+        createdAt="2026-07-12T00:00:00Z",
+        options=JobOptions(correct=False, backend="codex", model="gpt-5.5"),
+        status=JobStatus.DONE,
+        files=[],
+    )
+
+    # JobStore.get_job을 모킹
+    client.app.state.job_store.get_job = MagicMock(return_value=job)
+
+    resp = client.get("/api/jobs/job-1")
+
+    assert resp.status_code == 200
+    result = resp.json()
+    assert result["id"] == "job-1"
+    assert result["status"] == "done"
+
+
+def test_get_job_returns_404_for_nonexistent_job(client: TestClient) -> None:
+    """존재하지 않는 잡을 조회하면 404를 반환한다."""
+    from unittest.mock import MagicMock
+
+    # JobStore.get_job을 모킹하여 None 반환
+    client.app.state.job_store.get_job = MagicMock(return_value=None)
+
+    resp = client.get("/api/jobs/nonexistent")
+
+    assert resp.status_code == 404
