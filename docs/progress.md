@@ -1,5 +1,14 @@
 # Progress
 
+## 2026-07-12 - 웹서비스화 (브라우저에서 이미지 올려 텍스트 다운로드)
+- 상태: 완료
+- 완료한 일: 이미 만든 처리 엔진에 웹 서버 계층(FastAPI HTTP API)과 화면 연결을 붙여, 브라우저에서 한글 책 스캔 이미지를 올리면 OCR(광학 문자 인식)로 텍스트를 뽑아 내려받는 개인용 웹서비스를 완성. 명령 하나(`uvicorn server.app:app`)로 뜨는 단일 주소 방식. 실제 이미지 업로드부터 `book.txt` 다운로드까지 end-to-end 동작 확인(Apple Vision OCR로 한글 인식).
+- 커밋/PR: `ae4075c` feat: 웹서비스화 - FastAPI HTTP 계층 + 프런트 실제 연결 (#7). PR #7 https://github.com/jojo3420/img2txt/pull/7 (base main, squash 머지 완료)
+- 결정사항: (1) 단일 프로세스-단일 URL 서빙(FastAPI가 API와 빌드된 프런트를 한 포트에서, same-origin이라 CORS 불필요). (2) 다운로드 파일명 규칙 `{실행일자}-{원본명}-{순번|book}.txt`(헤더로만, 디스크 저장명은 안전한 내부 이름 유지). (3) 보정 백엔드 `model`은 요청으로 안 받고 서버가 파생. (4) claude 백엔드는 실측 미검증이라 UI 실험적 표기, 기본 codex.
+- 남은 일: (1) 배치 크기-동시성 캘리브레이션 + 보정 품질 게이트. (2) 잡 상태 영속화(현재는 서버 재시작 시 과거 잡 소멸). (3) `ocrmac`은 macOS 전용 - 서버 배포 시 대안 필요.
+- 관련 문서: docs/superpowers/specs/2026-07-12-web-service-http-frontend-design.md, docs/superpowers/plans/2026-07-12-web-service-http-frontend.md, docs/review/review-result-20260712-*.md
+- 상세 히스토리: progress-001.md
+
 ## 2026-07-10 - 보정 백엔드 앱 연결 (codex 버그 수정 + 배치 오케스트레이션)
 - 상태: 부분 완료 (claude/ollama 백엔드는 실측 미검증 — codex만 실제 호출 확인)
 - 완료한 일: (1) codex 백엔드가 실제로 동작 안 하던 버그 수정 — `codex exec`에 프롬프트를 파일 경로 옵션(`--output-last-message`)으로 잘못 넘기던 것을 위치 인자로 교정. (2) 보정 흐름을 백엔드 주입 배치 구조로 확장 — 문단을 묶어 `backend.correct_batch` 호출 후 문단별 길이 가드 적용, 긴 문단 분리 시 원위치 인덱스 정합성 보장. (3) `correct`에 `--backend {codex,claude,ollama}`(기본 codex) 선택 추가. 실제 codex로 `correct` end-to-end 성공.
