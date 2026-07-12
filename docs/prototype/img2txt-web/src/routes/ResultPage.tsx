@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { ChevronDown, ChevronRight, Download, FileWarning } from "lucide-react";
-import { downloadPage, useJob, usePage } from "../api/client";
+import { useJob, usePage } from "../api/client";
 import ErrorState from "../components/ErrorState";
 import EmptyState from "../components/EmptyState";
 import Spinner from "../components/Spinner";
@@ -293,18 +293,15 @@ function PageRow({
         <span className="flex-1 min-w-0 truncate text-sm text-zinc-500 dark:text-zinc-400">
           {previewText || "미리보기 없음"}
         </span>
-        <span
-          role="button"
-          tabIndex={0}
-          onClick={(e) => {
-            e.stopPropagation();
-            downloadPage(jobId, pageNumber);
-          }}
+        <a
+          href={`/api/jobs/${jobId}/pages/${pageNumber}/download`}
+          download
+          onClick={(e) => e.stopPropagation()}
           className="shrink-0 inline-flex items-center gap-1 rounded-lg border border-zinc-200 dark:border-zinc-700 px-2.5 py-1 text-xs font-medium text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
         >
           <Download size={12} />
           page-{String(pageNumber).padStart(3, "0")}.txt
-        </span>
+        </a>
       </button>
 
       {expanded && (
