@@ -22,14 +22,14 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
 export interface CreateJobInput {
   files: File[];
   correct: boolean;
-  model: string;
+  backend: "codex" | "claude";
 }
 
 async function createJob(input: CreateJobInput): Promise<CreateJobResponse> {
   const formData = new FormData();
   input.files.forEach((f) => formData.append("files", f));
   formData.append("correct", String(input.correct));
-  formData.append("model", input.model);
+  formData.append("backend", input.backend);
 
   const res = await fetch(`${API_BASE}/jobs`, { method: "POST", body: formData });
   return jsonOrThrow<CreateJobResponse>(res);
