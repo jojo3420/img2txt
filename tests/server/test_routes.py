@@ -36,14 +36,89 @@ def test_create_job_accepts_valid_jpeg(client: TestClient) -> None:
     assert result["id"].startswith("job-")
 
 
-def test_create_job_rejects_non_jpeg(client: TestClient) -> None:
-    """비-JPEG 파일을 업로드하면 400 응답을 반환한다."""
-    png_data = b"\x89PNG\r\n\x1a\n"
+def test_create_job_accepts_valid_png(client: TestClient) -> None:
+    """유효한 PNG 파일을 업로드하면 201 응답을 반환한다."""
+    png_data = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
 
     resp = client.post(
         "/api/jobs",
         data={"correct": "false", "backend": "codex"},
         files={"files": ("test.png", png_data, "image/png")},
+    )
+
+    assert resp.status_code == 201
+    result = resp.json()
+    assert "id" in result
+    assert result["id"].startswith("job-")
+
+
+def test_create_job_accepts_valid_webp(client: TestClient) -> None:
+    """유효한 WEBP 파일을 업로드하면 201 응답을 반환한다."""
+    webp_data = b"RIFF" + b"\x00" * 4 + b"WEBP" + b"\x00" * 100
+
+    resp = client.post(
+        "/api/jobs",
+        data={"correct": "false", "backend": "codex"},
+        files={"files": ("test.webp", webp_data, "image/webp")},
+    )
+
+    assert resp.status_code == 201
+    result = resp.json()
+    assert "id" in result
+
+
+def test_create_job_accepts_valid_tiff_le(client: TestClient) -> None:
+    """유효한 TIFF(little-endian) 파일을 업로드하면 201 응답을 반환한다."""
+    tiff_data = b"II*\x00" + b"\x00" * 100
+
+    resp = client.post(
+        "/api/jobs",
+        data={"correct": "false", "backend": "codex"},
+        files={"files": ("test.tif", tiff_data, "image/tiff")},
+    )
+
+    assert resp.status_code == 201
+    result = resp.json()
+    assert "id" in result
+
+
+def test_create_job_accepts_valid_tiff_be(client: TestClient) -> None:
+    """유효한 TIFF(big-endian) 파일을 업로드하면 201 응답을 반환한다."""
+    tiff_data = b"MM\x00*" + b"\x00" * 100
+
+    resp = client.post(
+        "/api/jobs",
+        data={"correct": "false", "backend": "codex"},
+        files={"files": ("test.tiff", tiff_data, "image/tiff")},
+    )
+
+    assert resp.status_code == 201
+    result = resp.json()
+    assert "id" in result
+
+
+def test_create_job_rejects_invalid_magic(client: TestClient) -> None:
+    """매직넘버가 유효하지 않은 파일을 업로드하면 400 응답을 반환한다."""
+    # .png 확장자를 가진 가짜 바이트
+    fake_png = b"FAKE" + b"\x00" * 100
+
+    resp = client.post(
+        "/api/jobs",
+        data={"correct": "false", "backend": "codex"},
+        files={"files": ("test.png", fake_png, "image/png")},
+    )
+
+    assert resp.status_code == 400
+
+
+def test_create_job_rejects_unsupported_extension(client: TestClient) -> None:
+    """지원하지 않는 확장자를 업로드하면 400 응답을 반환한다."""
+    jpeg_data = b"\xff\xd8\xff\xe0" + b"\x00" * 100
+
+    resp = client.post(
+        "/api/jobs",
+        data={"correct": "false", "backend": "codex"},
+        files={"files": ("test.bmp", jpeg_data, "image/jpeg")},
     )
 
     assert resp.status_code == 400
@@ -434,3 +509,46 @@ def test_page_detail_409_processing_missing_file(
     resp = client.get("/api/jobs/job-1/pages/1")
 
     assert resp.status_code == 409
+
+
+def test_is_valid_image_magic_jpeg() -> None:
+    """JPEG 매직넘버 검증 (3바이트 이상)."""
+    from server.routes import _is_valid_image_magic
+
+    assert _is_valid_image_magic(b"\xff\xd8\xff\xe0")
+    assert _is_valid_image_magic(b"\xff\xd8\xff")
+    assert not _is_valid_image_magic(b"\xff\xd8")
+
+
+def test_is_valid_image_magic_png() -> None:
+    """PNG 매직넘버 검증."""
+    from server.routes import _is_valid_image_magic
+
+    assert _is_valid_image_magic(b"\x89PNG\r\n\x1a\n")
+    assert not _is_valid_image_magic(b"\x89PNG\r\n\x1a")
+
+
+def test_is_valid_image_magic_webp() -> None:
+    """WEBP 매직넘버 검증."""
+    from server.routes import _is_valid_image_magic
+
+    assert _is_valid_image_magic(b"RIFF\x00\x00\x00\x00WEBP")
+    assert not _is_valid_image_magic(b"RIFF\x00\x00\x00\x00JPEG")
+
+
+def test_is_valid_image_magic_tiff() -> None:
+    """TIFF 매직넘버 검증 (little-endian/big-endian)."""
+    from server.routes import _is_valid_image_magic
+
+    assert _is_valid_image_magic(b"II*\x00")
+    assert _is_valid_image_magic(b"MM\x00*")
+    assert not _is_valid_image_magic(b"II\x00\x00")
+
+
+def test_is_valid_image_magic_empty() -> None:
+    """빈 바이트 또는 짧은 바이트는 거절."""
+    from server.routes import _is_valid_image_magic
+
+    assert not _is_valid_image_magic(b"")
+    assert not _is_valid_image_magic(b"\x00")
+    assert not _is_valid_image_magic(b"\x00\x00")

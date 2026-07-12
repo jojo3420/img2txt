@@ -7,7 +7,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-IMAGE_EXTENSIONS: frozenset[str] = frozenset({".jpg", ".jpeg"})
+IMAGE_EXTENSIONS: frozenset[str] = frozenset({".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff"})
 _LAST_NUMBER_PATTERN: re.Pattern[str] = re.compile(r"(\d+)(?!.*\d)")
 
 
@@ -18,7 +18,7 @@ def extract_page_number(path: Path) -> int | None:
 
 
 def collect_images(input_dir: Path) -> list[Path]:
-    """jpg/jpeg(대소문자 무시)를 모아 파일명 마지막 숫자 기준 자연 정렬한다.
+    """지원 이미지(jpg/jpeg/png/webp/tif/tiff, 대소문자 무시)를 모아 파일명 마지막 숫자 기준 자연 정렬한다.
 
     숫자가 없는 파일은 warning 후 맨 뒤에 이름순으로 배치한다 (스펙 7절).
     """

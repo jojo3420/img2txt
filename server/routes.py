@@ -63,9 +63,30 @@ def _read_limited(upload: UploadFile, max_per_file: int, already_total: int) -> 
     return bytes(data)
 
 
-def _is_jpeg_magic(data: bytes) -> bool:
-    """JPEG 매직넘버를 검증한다."""
-    return len(data) >= 3 and data[:3] == b"\xff\xd8\xff"
+def _is_valid_image_magic(data: bytes) -> bool:
+    """이미지 파일 매직넘버를 검증한다.
+
+    지원 포맷: JPEG, PNG, WEBP, TIFF
+
+    Args:
+        data: 파일 바이트
+
+    Returns:
+        유효한 이미지 포맷이면 True, 아니면 False
+    """
+    # JPEG: 0xFF 0xD8 0xFF
+    if len(data) >= 3 and data[:3] == b"\xff\xd8\xff":
+        return True
+    # PNG: 0x89 0x50 0x4E 0x47 0x0D 0x0A 0x1A 0x0A
+    if len(data) >= 8 and data[:8] == b"\x89PNG\r\n\x1a\n":
+        return True
+    # WEBP: RIFF ... WEBP
+    if (len(data) >= 12 and data[0:4] == b"RIFF" and data[8:12] == b"WEBP"):
+        return True
+    # TIFF: little-endian (II*\x00) or big-endian (MM\x00*)
+    if len(data) >= 4 and data[0:4] in (b"II*\x00", b"MM\x00*"):
+        return True
+    return False
 
 
 @router.post("/jobs", status_code=201, response_model=CreateJobResponse)
@@ -107,9 +128,9 @@ def create_job_route(
         filename = upload.filename or "unknown"
 
         # 파일명 및 content-type 검증
-        if Path(filename).suffix.lower() not in (".jpg", ".jpeg"):
+        if Path(filename).suffix.lower() not in (".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff"):
             raise HTTPException(400, "invalid file type")
-        if upload.content_type != "image/jpeg":
+        if upload.content_type not in ("image/jpeg", "image/png", "image/webp", "image/tiff"):
             raise HTTPException(400, "invalid file type")
 
         # 파일 전체 읽기 (파일당/전체 상한 실시간 검사)
@@ -120,7 +141,7 @@ def create_job_route(
             raise HTTPException(400, "empty file")
 
         # JPEG 매직넘버 검증 (전체 바이트로 검증)
-        if not _is_jpeg_magic(chunk):
+        if not _is_valid_image_magic(chunk):
             raise HTTPException(400, "invalid file type")
 
         total_bytes += len(chunk)

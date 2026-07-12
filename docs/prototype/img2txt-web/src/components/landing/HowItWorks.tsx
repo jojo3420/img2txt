@@ -4,11 +4,11 @@ const STEPS = [
   {
     icon: UploadCloud,
     title: "1. 업로드",
-    desc: "책 스캔 이미지(jpg/jpeg) 여러 장을 한 번에 올립니다.",
+    desc: "책 스캔 이미지(jpg, png, webp, tiff) 여러 장을 한 번에 올립니다.",
   },
   {
     icon: Cpu,
-    title: "2. 자동 변환 · 보정",
+    title: "2. 자동 변환 - 보정",
     desc: "OCR → 꼬리말 제거 → 문단 복원을 거치고, 원하면 LLM 오탈자 보정까지 진행합니다.",
   },
   {

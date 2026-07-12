@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import { UploadCloud } from "lucide-react";
 
-const ACCEPTED = ["image/jpeg", "image/jpg"];
+const ACCEPTED = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/tiff"];
 
 export default function FileDropzone({
   onFiles,
@@ -11,10 +11,10 @@ export default function FileDropzone({
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const filterJpeg = useCallback(
+  const filterImages = useCallback(
     (list: FileList | File[]) =>
       Array.from(list).filter(
-        (f) => ACCEPTED.includes(f.type) || /\.jpe?g$/i.test(f.name)
+        (f) => ACCEPTED.includes(f.type) || /\.(jpe?g|png|webp|tiffs?)$/i.test(f.name)
       ),
     []
   );
@@ -23,10 +23,10 @@ export default function FileDropzone({
     (e: React.DragEvent<HTMLDivElement>) => {
       e.preventDefault();
       setDragOver(false);
-      const files = filterJpeg(e.dataTransfer.files);
+      const files = filterImages(e.dataTransfer.files);
       if (files.length) onFiles(files);
     },
-    [filterJpeg, onFiles]
+    [filterImages, onFiles]
   );
 
   return (
@@ -51,7 +51,7 @@ export default function FileDropzone({
         <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
           이미지를 이곳에 끌어다 놓으세요
         </p>
-        <p className="text-xs text-zinc-400 dark:text-zinc-500">jpg / jpeg 파일만 지원</p>
+        <p className="text-xs text-zinc-400 dark:text-zinc-500">jpg, png, webp, tiff 파일 지원 (HEIC 미지원)</p>
       </div>
       <button
         type="button"
@@ -63,11 +63,11 @@ export default function FileDropzone({
       <input
         ref={inputRef}
         type="file"
-        accept=".jpg,.jpeg,image/jpeg"
+        accept=".jpg,.jpeg,.png,.webp,.tif,.tiff,image/jpeg,image/png,image/webp,image/tiff"
         multiple
         className="hidden"
         onChange={(e) => {
-          if (e.target.files) onFiles(filterJpeg(e.target.files));
+          if (e.target.files) onFiles(filterImages(e.target.files));
           e.target.value = "";
         }}
       />

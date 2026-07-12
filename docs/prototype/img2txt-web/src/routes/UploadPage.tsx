@@ -61,7 +61,7 @@ export default function UploadPage() {
           이미지 업로드
         </h1>
         <p className="text-sm text-zinc-400 dark:text-zinc-500">
-          책 스캔 이미지를 올리면 텍스트로 변환합니다. jpg/jpeg만 지원해요.
+          책 스캔 이미지를 올리면 텍스트로 변환합니다. jpg, png, webp, tiff 지원 (HEIC 미지원).
         </p>
       </div>
 

@@ -13,7 +13,7 @@ from server.config import JOBS_ROOT
 logger = logging.getLogger(__name__)
 CHUNK_SIZE: int = 64 * 1024
 
-_ALLOWED_EXT: frozenset[str] = frozenset({".jpg", ".jpeg"})
+_ALLOWED_EXT: frozenset[str] = frozenset({".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff"})
 _SAFE_CHARS = re.compile(r"[^A-Za-z0-9._-]")
 
 
@@ -24,7 +24,8 @@ def sanitize_filename(filename: str) -> str:
         filename: 원본 파일명(신뢰 불가 입력).
 
     Returns:
-        안전한 파일명. 경로 구분자-위험 문자를 제거하고 확장자를 jpg/jpeg로 정규화.
+        안전한 파일명. 경로 구분자-위험 문자를 제거하고 확장자를 유효 포맷으로 정규화(.jpg/.jpeg/.png/.webp/.tif/.tiff).
+        알 수 없는 확장자는 .jpg로 fallback.
     """
     base = os.path.basename(filename.replace("\\", "/"))
     stem, ext = os.path.splitext(base)

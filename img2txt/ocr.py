@@ -45,7 +45,9 @@ def recognize_page(image_path: Path, page_number: int) -> Page:
 
     with Image.open(image_path) as image:
         upright = ImageOps.exif_transpose(image)
-        annotations = ocrmac.OCR(upright, language_preference=[OCR_LANGUAGE]).recognize()
+        # PNG/WEBP의 알파 채널을 RGB로 평탄화하여 Vision OCR 호환성 확보
+        rgb_image = upright.convert("RGB")
+        annotations = ocrmac.OCR(rgb_image, language_preference=[OCR_LANGUAGE]).recognize()
     lines = [
         OcrLine(text=text, confidence=confidence, x=bx, y=by, width=bw, height=bh)
         for text, confidence, (bx, by, bw, bh) in annotations

@@ -38,8 +38,8 @@ def build_parser() -> argparse.ArgumentParser:
     """convert/correct 서브커맨드를 갖는 파서를 만든다."""
     parser = argparse.ArgumentParser(prog="img2txt", description="책 스캔 OCR 변환-보정 도구")
     subparsers = parser.add_subparsers(dest="command", required=True)
-    convert = subparsers.add_parser("convert", help="jpg 폴더 -> 페이지별 txt + 연속본")
-    convert.add_argument("input_dir", help="jpg/jpeg가 있는 폴더")
+    convert = subparsers.add_parser("convert", help="이미지 폴더 -> 페이지별 txt + 연속본")
+    convert.add_argument("input_dir", help="jpg/jpeg/png/webp/tif/tiff 이미지가 있는 폴더")
     convert.add_argument("-o", "--output", default=DEFAULT_OUTPUT_DIR, help="출력 폴더")
     convert.add_argument("-v", "--verbose", action="store_true", help="DEBUG 로그")
     correct = subparsers.add_parser("correct", help="연속본 txt -> LLM 보정본")
@@ -82,7 +82,7 @@ def run_convert(args: argparse.Namespace) -> int:
     output_dir = Path(args.output)
     image_paths = collect_images(input_dir)
     if not image_paths:
-        logger.error("입력 폴더에 jpg/jpeg가 없습니다: %s", input_dir)
+        logger.error("입력 폴더에 지원 이미지(jpg/jpeg/png/webp/tif/tiff)가 없습니다: %s", input_dir)
         return EXIT_ERROR
 
     pages: list[Page] = []
