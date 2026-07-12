@@ -1,5 +1,4 @@
 """HTTP API 라우트."""
-import logging
 import re
 from pathlib import Path
 
@@ -12,7 +11,6 @@ from server.models import CreateJobResponse, Job, JobOptions, JobStatus, PageDet
 from server.naming import content_disposition, download_name
 from server.storage import build_job_path, stream_file
 
-logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
 
 # backend → model 매핑
@@ -30,23 +28,39 @@ def get_store(request: Request) -> JobStore:
     return request.app.state.job_store
 
 
-def _read_chunk(upload: UploadFile, max_bytes: int) -> bytes:
-    """업로드 파일에서 청크를 읽는다.
+def _read_limited(upload: UploadFile, max_per_file: int, already_total: int) -> bytes:
+    """파일 전체를 청크로 읽으며 파일당/전체 상한을 실시간 검사한다.
 
     Args:
         upload: 업로드 파일
-        max_bytes: 읽을 최대 바이트 수
+        max_per_file: 파일당 최대 바이트
+        already_total: 이미 누적된 전체 바이트
 
     Returns:
-        읽은 바이트 데이터
+        읽은 전체 바이트
 
     Raises:
-        HTTPException: 상한 초과 시 413
+        HTTPException: 파일당 상한 초과 시 413, 전체 상한 초과 시 413
     """
-    chunk = upload.file.read(8192)
-    if len(chunk) > max_bytes:
-        raise HTTPException(413, "file size exceeds limit")
-    return chunk
+    _CHUNK_SIZE = 1024 * 1024  # 1MB씩 읽기
+    data = bytearray()
+
+    while True:
+        chunk = upload.file.read(_CHUNK_SIZE)
+        if not chunk:
+            break
+
+        data.extend(chunk)
+
+        # 파일당 상한 검사
+        if len(data) > max_per_file:
+            raise HTTPException(413, "file size exceeds limit")
+
+        # 전체 상한 검사
+        if already_total + len(data) > UPLOAD_MAX_TOTAL_BYTES:
+            raise HTTPException(413, "total upload size exceeds limit")
+
+    return bytes(data)
 
 
 def _is_jpeg_magic(data: bytes) -> bool:
@@ -98,16 +112,16 @@ def create_job_route(
         if upload.content_type != "image/jpeg":
             raise HTTPException(400, "invalid file type")
 
-        # 첫 청크 읽기
-        chunk = _read_chunk(upload, UPLOAD_MAX_BYTES_PER_FILE)
+        # 파일 전체 읽기 (파일당/전체 상한 실시간 검사)
+        chunk = _read_limited(upload, UPLOAD_MAX_BYTES_PER_FILE, total_bytes)
 
-        # JPEG 매직넘버 검증
+        # 빈 파일 거절
+        if len(chunk) == 0:
+            raise HTTPException(400, "empty file")
+
+        # JPEG 매직넘버 검증 (전체 바이트로 검증)
         if not _is_jpeg_magic(chunk):
             raise HTTPException(400, "invalid file type")
-
-        # 파일 크기 검증
-        if len(chunk) + total_bytes > UPLOAD_MAX_TOTAL_BYTES:
-            raise HTTPException(413, "total upload size exceeds limit")
 
         total_bytes += len(chunk)
         collected.append((filename, chunk))

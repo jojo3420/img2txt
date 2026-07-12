@@ -361,3 +361,76 @@ def test_download_book_409_when_processing(
     resp = client.get("/api/jobs/job-1/download?type=book")
 
     assert resp.status_code == 409
+
+
+def test_create_job_413_file_too_large(tmp_path: Path, monkeypatch) -> None:
+    """파일이 파일당 상한을 초과하면 413을 반환한다."""
+    from server.app import create_app
+    from server.jobs import JobStore
+
+    # monkeypatch를 먼저 설정한 후 app 생성
+    monkeypatch.setattr("server.config.JOBS_ROOT", tmp_path / "jobs")
+    monkeypatch.setattr("server.routes.JOBS_ROOT", tmp_path / "jobs")
+    monkeypatch.setattr("server.routes.UPLOAD_MAX_BYTES_PER_FILE", 10)
+
+    app = create_app()
+    app.state.job_store = JobStore(tmp_path / "jobs", 2)
+    client = TestClient(app)
+
+    # 유효한 JPEG 매직넘버 + 50바이트 = 55바이트 (상한 초과)
+    jpeg_data = b"\xff\xd8\xff\xe0" + b"\x00" * 50
+
+    resp = client.post(
+        "/api/jobs",
+        data={"correct": "false", "backend": "codex"},
+        files={"files": ("test.jpg", jpeg_data, "image/jpeg")},
+    )
+
+    assert resp.status_code == 413
+
+
+def test_create_job_413_total_too_large(tmp_path: Path, monkeypatch) -> None:
+    """전체 업로드 크기가 전체 상한을 초과하면 413을 반환한다."""
+    from server.app import create_app
+    from server.jobs import JobStore
+
+    # monkeypatch를 먼저 설정한 후 app 생성
+    monkeypatch.setattr("server.config.JOBS_ROOT", tmp_path / "jobs")
+    monkeypatch.setattr("server.routes.JOBS_ROOT", tmp_path / "jobs")
+    monkeypatch.setattr("server.routes.UPLOAD_MAX_TOTAL_BYTES", 100)
+    monkeypatch.setattr("server.routes.UPLOAD_MAX_BYTES_PER_FILE", 1000)
+
+    app = create_app()
+    app.state.job_store = JobStore(tmp_path / "jobs", 2)
+    client = TestClient(app)
+
+    # 유효한 JPEG 매직넘버 + 60바이트씩 2개 = 128바이트 (상한 초과)
+    jpeg_data_1 = b"\xff\xd8\xff\xe0" + b"\x00" * 60
+    jpeg_data_2 = b"\xff\xd8\xff\xe0" + b"\x00" * 60
+
+    resp = client.post(
+        "/api/jobs",
+        data={"correct": "false", "backend": "codex"},
+        files=[
+            ("files", ("test1.jpg", jpeg_data_1, "image/jpeg")),
+            ("files", ("test2.jpg", jpeg_data_2, "image/jpeg")),
+        ],
+    )
+
+    assert resp.status_code == 413
+
+
+def test_page_detail_409_processing_missing_file(
+    tmp_path: Path, client: TestClient
+) -> None:
+    """처리 중인 잡에서 페이지 파일이 아직 없으면 409를 반환한다."""
+    from unittest.mock import MagicMock
+    from server.models import FileStatus, JobStatus
+
+    job = _one_file_job(FileStatus.OCR)
+    job.status = JobStatus.PROCESSING
+    client.app.state.job_store.get_job = MagicMock(return_value=job)
+
+    resp = client.get("/api/jobs/job-1/pages/1")
+
+    assert resp.status_code == 409
