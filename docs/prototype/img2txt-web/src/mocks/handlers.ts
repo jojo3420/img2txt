@@ -121,7 +121,9 @@ export const handlers = [
     const formData = await request.formData();
     const rawFiles = formData.getAll("files") as File[];
     const correct = formData.get("correct") === "true";
-    const model = (formData.get("model") as string) || "qwen3:14b";
+    const backend = (formData.get("backend") as "codex" | "claude") || "codex";
+    const modelMap: Record<"codex" | "claude", string> = { codex: "gpt-5.5", claude: "claude" };
+    const model = modelMap[backend];
 
     if (rawFiles.length === 0) {
       return HttpResponse.json(
@@ -153,9 +155,13 @@ export const handlers = [
     const job: InternalJob = {
       id,
       createdAt: new Date().toISOString(),
-      options: { correct, model },
+      options: { correct, backend, model },
       status: "queued",
       files,
+      phase: "ocr",
+      correction: null,
+      correctionError: null,
+      correctedStale: false,
     };
     jobs.set(id, job);
 

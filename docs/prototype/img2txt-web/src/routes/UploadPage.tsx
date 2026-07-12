@@ -10,12 +10,16 @@ import { useCreateJob } from "../api/client";
 import { naturalSortByFilename } from "../lib/naturalSort";
 import { formatBytes } from "../lib/format";
 
-const MODEL_NAME = "qwen3:14b";
+const BACKEND_MODEL_DISPLAY: Record<"codex" | "claude", string> = {
+  codex: "gpt-5.5",
+  claude: "claude",
+};
 
 export default function UploadPage() {
   const navigate = useNavigate();
   const [files, setFiles] = useState<File[]>([]);
   const [correct, setCorrect] = useState(true);
+  const [backend, setBackend] = useState<"codex" | "claude">("codex");
   const createJob = useCreateJob();
 
   const sortedFiles = useMemo(
@@ -43,7 +47,7 @@ export default function UploadPage() {
 
   async function handleStart() {
     createJob.mutate(
-      { files, correct, model: MODEL_NAME },
+      { files, correct, backend },
       {
         onSuccess: ({ id }) => navigate(`/jobs/${id}`),
       }
@@ -121,13 +125,49 @@ export default function UploadPage() {
           checked={correct}
           onChange={setCorrect}
           label="LLM 보정까지 실행"
-          description={`로컬 LLM(Ollama, ${MODEL_NAME})으로 OCR 오탈자·띄어쓰기를 교정합니다.`}
+          description="OCR 오탈자-띄어쓰기를 LLM으로 교정합니다."
         />
         {correct && (
-          <p className="rounded-lg bg-amber-50 dark:bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
-            보정을 켜면 처리 시간이 크게 늘어납니다 — 문단당 평균 약 52초, 책 1권 기준
-            100분 이상 소요될 수 있어요.
-          </p>
+          <>
+            <div className="space-y-2">
+              <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                백엔드 선택
+              </label>
+              <div className="flex gap-2">
+                <label className="flex items-center gap-2 rounded-lg border border-zinc-200 dark:border-zinc-700 px-3 py-2 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors has-[:checked]:border-zinc-900 dark:has-[:checked]:border-zinc-100">
+                  <input
+                    type="radio"
+                    name="backend"
+                    value="codex"
+                    checked={backend === "codex"}
+                    onChange={(e) => setBackend(e.target.value as "codex")}
+                    className="w-4 h-4"
+                  />
+                  <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                    {BACKEND_MODEL_DISPLAY.codex}
+                  </span>
+                </label>
+                <label className="flex items-center gap-2 rounded-lg border border-zinc-200 dark:border-zinc-700 px-3 py-2 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors has-[:checked]:border-zinc-900 dark:has-[:checked]:border-zinc-100">
+                  <input
+                    type="radio"
+                    name="backend"
+                    value="claude"
+                    checked={backend === "claude"}
+                    onChange={(e) => setBackend(e.target.value as "claude")}
+                    className="w-4 h-4"
+                  />
+                  <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                    {BACKEND_MODEL_DISPLAY.claude}{" "}
+                    <span className="text-amber-600 dark:text-amber-400">실험적</span>
+                  </span>
+                </label>
+              </div>
+            </div>
+            <p className="rounded-lg bg-amber-50 dark:bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+              보정을 켜면 처리 시간이 크게 늘어납니다 — 문단당 평균 약 52초, 책 1권 기준
+              100분 이상 소요될 수 있어요.
+            </p>
+          </>
         )}
       </section>
 
