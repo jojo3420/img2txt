@@ -134,3 +134,30 @@ def get_job_route(job_id: str, store: JobStore = Depends(get_store)) -> Job:
     if job is None:
         raise HTTPException(404, "job not found")
     return job
+
+
+@router.post("/jobs/{job_id}/retry/{file_id}")
+def retry_route(
+    job_id: str, file_id: str, store: JobStore = Depends(get_store)
+) -> dict[str, str]:
+    """실패한 페이지 한 장의 재시도를 요청한다.
+
+    Args:
+        job_id: 재시도할 잡 ID
+        file_id: 재시도할 파일 ID
+        store: JobStore 인스턴스
+
+    Returns:
+        상태 응답
+
+    Raises:
+        HTTPException: 잡이 없으면 404, 파일이 없으면 404, 재시도 불가능하면 409
+    """
+    job = store.get_job(job_id)
+    if job is None:
+        raise HTTPException(404, "job not found")
+    if not any(f.id == file_id for f in job.files):
+        raise HTTPException(404, "file not found")
+    if not store.retry_file(job_id, file_id):
+        raise HTTPException(409, "file is not retryable")
+    return {"status": "ok"}

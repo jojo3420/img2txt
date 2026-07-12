@@ -120,3 +120,77 @@ def test_get_job_returns_404_for_nonexistent_job(client: TestClient) -> None:
     resp = client.get("/api/jobs/nonexistent")
 
     assert resp.status_code == 404
+
+
+def _one_file_job(file_status):
+    """테스트용 단일 파일 잡을 생성한다."""
+    from server.models import Job, JobOptions, JobStatus, PageFile
+
+    return Job(
+        id="job-1",
+        createdAt="2026-07-12T00:00:00Z",
+        options=JobOptions(correct=False, backend="codex", model="gpt-5.5"),
+        status=JobStatus.DONE,
+        files=[
+            PageFile(
+                id="f1", filename="a.jpg", pageNumber=1, sizeBytes=1, status=file_status
+            )
+        ],
+    )
+
+
+def test_retry_404_missing_job(client: TestClient) -> None:
+    """존재하지 않는 잡에 대한 재시도 요청하면 404를 반환한다."""
+    from unittest.mock import MagicMock
+    from server.models import FileStatus
+
+    client.app.state.job_store.get_job = MagicMock(return_value=None)
+
+    resp = client.post("/api/jobs/nonexistent/retry/f1")
+
+    assert resp.status_code == 404
+
+
+def test_retry_404_missing_file(client: TestClient) -> None:
+    """존재하지 않는 파일에 대한 재시도 요청하면 404를 반환한다."""
+    from unittest.mock import MagicMock
+    from server.models import FileStatus
+
+    client.app.state.job_store.get_job = MagicMock(
+        return_value=_one_file_job(FileStatus.FAILED)
+    )
+
+    resp = client.post("/api/jobs/job-1/retry/does-not-exist")
+
+    assert resp.status_code == 404
+
+
+def test_retry_409_not_retryable(client: TestClient) -> None:
+    """재시도 불가능한 파일에 대한 요청하면 409를 반환한다."""
+    from unittest.mock import MagicMock
+    from server.models import FileStatus
+
+    client.app.state.job_store.get_job = MagicMock(
+        return_value=_one_file_job(FileStatus.DONE)
+    )
+    client.app.state.job_store.retry_file = MagicMock(return_value=False)
+
+    resp = client.post("/api/jobs/job-1/retry/f1")
+
+    assert resp.status_code == 409
+
+
+def test_retry_200_success(client: TestClient) -> None:
+    """재시도 요청이 성공하면 200을 반환한다."""
+    from unittest.mock import MagicMock
+    from server.models import FileStatus
+
+    client.app.state.job_store.get_job = MagicMock(
+        return_value=_one_file_job(FileStatus.FAILED)
+    )
+    client.app.state.job_store.retry_file = MagicMock(return_value=True)
+
+    resp = client.post("/api/jobs/job-1/retry/f1")
+
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "ok"}
