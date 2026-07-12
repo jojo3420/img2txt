@@ -68,6 +68,7 @@ class Job(BaseModel):
     phase: str = "ocr"
     correction: dict[str, int] | None = None
     correctionError: str | None = None
+    correctedStale: bool = False
 
 
 class PageDetail(BaseModel):

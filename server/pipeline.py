@@ -9,7 +9,7 @@ import uuid
 from pathlib import Path
 from typing import Callable
 
-from img2txt.assembler import assemble
+from img2txt.assembler import assemble, is_missing_page_marker
 from img2txt.backends.factory import select_backend
 from img2txt.corrector import (
     CorrectionStatus,
@@ -137,17 +137,15 @@ def _recover_pending_replacement(output_dir: Path) -> None:
             logger.warning("복구 백업 정리 실패: %s", error)
 
 
-def _replace_text_outputs(changes: dict[Path, str]) -> None:
-    """파일 기반 복구 기록을 남기고 여러 텍스트를 교체한다."""
-    output_dir = Path(
-        os.path.commonpath([str(path.parent) for path in changes])
-    )
-    _recover_pending_replacement(output_dir)
-
-    transaction_id = uuid.uuid4().hex
+def _snapshot_backups(
+    output_dir: Path,
+    targets: list[Path],
+    transaction_id: str,
+) -> tuple[list[dict[str, str | None]], list[Path]]:
+    """각 대상의 백업을 생성하고 marker entries를 구성한다."""
     entries: list[dict[str, str | None]] = []
     backup_paths: list[Path] = []
-    for target in changes:
+    for target in targets:
         backup: Path | None = None
         if target.exists():
             backup = target.parent / (
@@ -169,14 +167,14 @@ def _replace_text_outputs(changes: dict[Path, str]) -> None:
                 ),
             }
         )
+    return entries, backup_paths
 
-    marker = output_dir / _RETRY_MARKER
-    marker_content = json.dumps(
-        {"entries": entries},
-        ensure_ascii=False,
-    ).encode("utf-8")
-    _write_bytes_durable(marker, marker_content)
 
+def _commit_replacements(
+    changes: dict[Path, str],
+    output_dir: Path,
+) -> None:
+    """임시파일 쓰기→os.replace→fsync를 수행한다."""
     temporary_paths: dict[Path, Path] = {}
     try:
         for target, text in changes.items():
@@ -197,28 +195,53 @@ def _replace_text_outputs(changes: dict[Path, str]) -> None:
     except Exception:
         _recover_pending_replacement(output_dir)
         raise
-    else:
-        try:
-            marker.unlink()
-        except Exception:
-            _recover_pending_replacement(output_dir)
-            raise
-        try:
-            _fsync_directory(output_dir)
-        except OSError as error:
-            logger.warning(
-                "재시도 커밋 동기화 실패, 복구 백업 유지: %s",
-                error,
-            )
-            return
-        for backup in backup_paths:
-            try:
-                backup.unlink(missing_ok=True)
-            except OSError as error:
-                logger.warning("커밋된 재시도 백업 정리 실패: %s", error)
     finally:
         for temporary in temporary_paths.values():
             temporary.unlink(missing_ok=True)
+
+
+def _replace_text_outputs(changes: dict[Path, str]) -> None:
+    """파일 기반 복구 기록을 남기고 여러 텍스트를 교체한다."""
+    output_dir = Path(
+        os.path.commonpath([str(path.parent) for path in changes])
+    )
+    _recover_pending_replacement(output_dir)
+
+    transaction_id = uuid.uuid4().hex
+    target_paths = list(changes.keys())
+    entries, backup_paths = _snapshot_backups(
+        output_dir,
+        target_paths,
+        transaction_id,
+    )
+
+    marker = output_dir / _RETRY_MARKER
+    marker_content = json.dumps(
+        {"entries": entries},
+        ensure_ascii=False,
+    ).encode("utf-8")
+    _write_bytes_durable(marker, marker_content)
+
+    _commit_replacements(changes, output_dir)
+
+    try:
+        marker.unlink()
+    except Exception:
+        _recover_pending_replacement(output_dir)
+        raise
+    try:
+        _fsync_directory(output_dir)
+    except OSError as error:
+        logger.warning(
+            "재시도 커밋 동기화 실패, 복구 백업 유지: %s",
+            error,
+        )
+        return
+    for backup in backup_paths:
+        try:
+            backup.unlink(missing_ok=True)
+        except OSError as error:
+            logger.warning("커밋된 재시도 백업 정리 실패: %s", error)
 
 
 async def run_convert_pipeline(
@@ -227,7 +250,7 @@ async def run_convert_pipeline(
     storage: JobStorage,
     on_update: UpdateCallback,
 ) -> None:
-    """모든 이미지를 OCR하고 페이지·연속본 텍스트를 만든다."""
+    """모든 이미지를 OCR하고 페이지-연속본 텍스트를 만든다."""
     del storage  # T9와 공유하는 공개 인터페이스를 유지한다.
     image_paths = collect_images(job_path / "uploads")
     image_numbers = [extract_page_number(path) for path in image_paths]
@@ -294,27 +317,38 @@ async def run_correct_pipeline(
     book_path = output_dir / "book.txt"
 
     try:
-        paragraphs = [
+        raw_paragraphs = [
             part
             for part in book_path.read_text(encoding="utf-8").split("\n\n")
             if part.strip()
         ]
-        if not paragraphs:
+        if not raw_paragraphs:
             raise ValueError("처리할 문단이 없습니다")
+
+        correctable_indices = [
+            i for i, p in enumerate(raw_paragraphs)
+            if not is_missing_page_marker(p)
+        ]
+        to_correct = [raw_paragraphs[i] for i in correctable_indices]
 
         job.status = JobStatus.PROCESSING
         job.phase = "correcting"
-        job.correction = {"done": 0, "total": len(paragraphs)}
+        job.correction = {"done": 0, "total": len(to_correct)}
         on_update(job)
         backend = select_backend(job.options.model, job.options.backend)
-        corrected, records = correct_paragraphs(
-            paragraphs,
-            job.options.model,
-            backend,
-        )
+
+        if to_correct:
+            corrected_subset, records = correct_paragraphs(
+                to_correct,
+                job.options.model,
+                backend,
+            )
+        else:
+            corrected_subset, records = [], []
+
         job.correction = {
             "done": len(records),
-            "total": len(paragraphs),
+            "total": len(to_correct),
         }
         write_text_file(
             output_dir / "corrections.log",
@@ -327,9 +361,13 @@ async def run_correct_pipeline(
             on_update(job)
             return
 
+        corrected_full = list(raw_paragraphs)
+        for idx, corr in zip(correctable_indices, corrected_subset):
+            corrected_full[idx] = corr
+
         write_text_file(
             output_dir / "book_corrected.txt",
-            "\n\n".join(corrected),
+            "\n\n".join(corrected_full),
         )
         corrected_count = sum(
             1 for record in records
@@ -348,6 +386,7 @@ async def run_correct_pipeline(
             job.summary.kept = kept_count
             job.summary.guardBlocked = guard_blocked_count
         job.correctionError = None
+        job.correctedStale = False
         job.status = JobStatus.DONE
         on_update(job)
     except Exception as error:
@@ -429,6 +468,8 @@ async def retry_page_pipeline(
                 1 for item in job.files if item.status is FileStatus.FAILED
             )
             job.summary.removedFooterLines = sum(footer_counts)
+        if job.options.correct and (job_path / "output" / "book_corrected.txt").exists():
+            job.correctedStale = True
         on_update(job)
         return True
     except Exception as error:

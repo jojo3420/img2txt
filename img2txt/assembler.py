@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from img2txt.layout import PageLayout
 
@@ -10,6 +11,13 @@ logger = logging.getLogger(__name__)
 MISSING_PAGE_MARKER_FORMAT: str = "[페이지 {number} 누락]"
 PARAGRAPH_SEPARATOR: str = "\n\n"
 LINE_JOINT: str = " "
+
+_MISSING_PAGE_MARKER_RE: re.Pattern[str] = re.compile(r"^\[페이지 \d+ 누락\]$")
+
+
+def is_missing_page_marker(text: str) -> bool:
+    """assembler가 삽입한 누락 표식 문단인지 판별한다."""
+    return bool(_MISSING_PAGE_MARKER_RE.match(text.strip()))
 
 
 def assemble(layouts: list[PageLayout]) -> str:

@@ -19,6 +19,16 @@ from server.pipeline import (
 from server.storage import JobStorage
 
 
+def _resolve_retry_status(
+    files: list[PageFile],
+    succeeded: bool = False,
+) -> JobStatus:
+    """재시도 성공 여부와 파일 상태로 최종 잡 상태를 결정한다."""
+    if succeeded or any(item.status is FileStatus.DONE for item in files):
+        return JobStatus.DONE
+    return JobStatus.FAILED
+
+
 def _file_sort_key(item: tuple[str, bytes]) -> tuple[bool, int, str]:
     """원본 파일명의 마지막 숫자로 자연 정렬 키를 만든다."""
     name = item[0]
@@ -184,15 +194,7 @@ class JobStore:
                         self._notify_update,
                     )
                 )
-                job.status = (
-                    JobStatus.DONE
-                    if success
-                    or any(
-                        item.status is FileStatus.DONE
-                        for item in job.files
-                    )
-                    else JobStatus.FAILED
-                )
+                job.status = _resolve_retry_status(job.files, success)
             except Exception as error:
                 file_entry = next(
                     (
@@ -205,14 +207,7 @@ class JobStore:
                 if file_entry is not None:
                     file_entry.status = FileStatus.FAILED
                     file_entry.error = str(error)
-                job.status = (
-                    JobStatus.DONE
-                    if any(
-                        item.status is FileStatus.DONE
-                        for item in job.files
-                    )
-                    else JobStatus.FAILED
-                )
+                job.status = _resolve_retry_status(job.files)
             self._notify_update(job)
         finally:
             with self._lock:
