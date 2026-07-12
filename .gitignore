@@ -5,3 +5,5 @@ __pycache__/
 .omc/
 .serena/
 .worktrees/
+jobs/
+docs/prototype/img2txt-web/dist/
