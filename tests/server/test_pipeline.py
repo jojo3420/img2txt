@@ -111,7 +111,7 @@ def test_correction_failure_preserves_book_and_finishes_job(
     monkeypatch.setattr("server.pipeline.select_backend", lambda *_args: object())
     monkeypatch.setattr(
         "server.pipeline.correct_paragraphs",
-        lambda *_args: (["원문"], [record]),
+        lambda *_args, **_kwargs: (["원문"], [record]),
     )
     updates: list[tuple[JobStatus, str, dict[str, int]]] = []
 
@@ -236,7 +236,7 @@ def test_correct_clears_stale_flag(
     monkeypatch.setattr("server.pipeline.select_backend", lambda *_: fake_backend())
     monkeypatch.setattr(
         "server.pipeline.correct_paragraphs",
-        lambda *_args: (
+        lambda *_args, **_kwargs: (
             ["원문 첫 문단", "수정된 둘째 문단"],
             records,
         ),

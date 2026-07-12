@@ -50,7 +50,14 @@ export default function JobPage() {
   const perFileSeconds = job.options.correct
     ? SECONDS_PER_FILE_OCR + SECONDS_PER_FILE_CORRECT
     : SECONDS_PER_FILE_OCR;
-  const estRemainingSeconds = (remaining / CONCURRENCY) * perFileSeconds;
+
+  let estRemainingSeconds: number;
+  if (job.phase === "correcting" && job.correction) {
+    const remainingParagraphs = job.correction.total - job.correction.done;
+    estRemainingSeconds = (remainingParagraphs / CONCURRENCY) * SECONDS_PER_FILE_CORRECT;
+  } else {
+    estRemainingSeconds = (remaining / CONCURRENCY) * perFileSeconds;
+  }
 
   const isFinished = job.status === "done" || job.status === "failed";
   const canViewResult = job.status === "done" && doneCount > 0;

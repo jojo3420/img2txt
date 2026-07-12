@@ -338,10 +338,15 @@ async def run_correct_pipeline(
         backend = select_backend(job.options.model, job.options.backend)
 
         if to_correct:
+            def _report_progress(done: int, total: int) -> None:
+                job.correction = {"done": done, "total": total}
+                on_update(job)
+
             corrected_subset, records = correct_paragraphs(
                 to_correct,
                 job.options.model,
                 backend,
+                progress_callback=_report_progress,
             )
         else:
             corrected_subset, records = [], []

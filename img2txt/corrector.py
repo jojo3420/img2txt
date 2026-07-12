@@ -7,7 +7,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
     from img2txt.backends.base import CorrectionBackend
@@ -117,6 +117,7 @@ def correct_paragraphs(
     model: str,
     backend: CorrectionBackend,
     batch_size: int = DEFAULT_BATCH_SIZE,
+    progress_callback: Callable[[int, int], None] | None = None,
 ) -> tuple[list[str], list[CorrectionRecord]]:
     """문단 목록을 배치 보정한다. 실패-차단 문단은 원문 유지 (스펙 규칙 8, 10~11).
 
@@ -125,6 +126,7 @@ def correct_paragraphs(
         model: 백엔드에 전달할 모델명.
         backend: CorrectionBackend 구현체 (correct_batch 메서드 제공).
         batch_size: 배치당 문단 수 (기본 10).
+        progress_callback: 진행 상황 콜백 (done, total) 튜플. 선택적.
 
     Returns:
         (보정된 문단 리스트, 기록 리스트).
@@ -156,8 +158,14 @@ def correct_paragraphs(
             short_to_orig_idx.append(index)
 
     # 배치 처리
+    long_done = len(paragraphs) - len(short_paragraphs)
     batch_results: list[str] = []
     failed_flags: list[bool] = []
+
+    # 배치가 없는 경우(모든 문단이 긴 경우) 초기 진행 보고
+    if long_done > 0 and len(short_paragraphs) == 0 and progress_callback:
+        progress_callback(long_done, len(paragraphs))
+
     for chunk_start in range(0, len(short_paragraphs), batch_size):
         chunk_end = min(chunk_start + batch_size, len(short_paragraphs))
         chunk = short_paragraphs[chunk_start:chunk_end]
@@ -181,6 +189,10 @@ def correct_paragraphs(
 
         batch_results.extend(chunk_result)
         failed_flags.extend([chunk_failed] * len(chunk))
+
+        # 배치 완료 후 진행 보고
+        if progress_callback:
+            progress_callback(long_done + chunk_end, len(paragraphs))
 
     # 원위치 복원 및 분류
     for batch_idx, orig_idx in enumerate(short_to_orig_idx):

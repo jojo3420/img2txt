@@ -159,3 +159,61 @@ def test_backend_exception_fallback() -> None:
     assert results == ["문단1", "문단2"]
     assert all(record.status is CorrectionStatus.FAILED for record in records)
     assert "예외" in records[0].reason
+
+
+def test_progress_callback_reports_batch_progress() -> None:
+    """progress_callback이 배치마다 (done, total)로 호출되고 단조 증가."""
+    backend = Mock()
+    backend.correct_batch.side_effect = [
+        ["교정1", "교정2"],   # 배치1: 짧은1,2
+        ["교정3", "교정4"],   # 배치2: 짧은3,4
+        ["교정5"],            # 배치3: 짧은5
+    ]
+    paragraphs = ["짧은1", "짧은2", "짧은3", "짧은4", "짧은5"]
+
+    progress_calls: list[tuple[int, int]] = []
+    def mock_progress(done: int, total: int) -> None:
+        progress_calls.append((done, total))
+
+    results, records = correct_paragraphs(
+        paragraphs,
+        model="test",
+        backend=backend,
+        batch_size=2,
+        progress_callback=mock_progress,
+    )
+
+    assert len(results) == 5
+    # 배치1(2개 처리), 배치2(2개 처리), 배치3(1개 처리)
+    # 각 배치 후 진행 콜백: (2, 5), (4, 5), (5, 5)
+    assert progress_calls == [(2, 5), (4, 5), (5, 5)]
+    assert all(done <= total for done, total in progress_calls)
+    # 마지막 호출이 done == total
+    assert progress_calls[-1][0] == progress_calls[-1][1]
+
+
+def test_progress_callback_with_long_paragraphs() -> None:
+    """긴 문단이 있을 때 done = long_done + short_done, total = 전체."""
+    backend = Mock()
+    backend.correct_batch.side_effect = [
+        ["교정1", "교정3"],   # 배치1: 짧은1, 짧은3
+    ]
+    # [짧, 긴, 짧] - 긴 문단은 즉시 SKIPPED_LONG
+    paragraphs = ["짧은1", "가" * 3000, "짧은3"]
+
+    progress_calls: list[tuple[int, int]] = []
+    def mock_progress(done: int, total: int) -> None:
+        progress_calls.append((done, total))
+
+    results, records = correct_paragraphs(
+        paragraphs,
+        model="test",
+        backend=backend,
+        batch_size=10,
+        progress_callback=mock_progress,
+    )
+
+    # 총 3개 문단, 긴 것 1개 SKIPPED_LONG
+    # 배치 후: done = 1(긴) + 2(짧 처리됨) = 3, total = 3
+    assert progress_calls == [(3, 3)]
+    assert records[1].status is CorrectionStatus.SKIPPED_LONG
