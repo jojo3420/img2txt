@@ -1,8 +1,9 @@
 """HTTP API 라우트."""
 import logging
+import re
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Request, UploadFile
 
 from server.config import UPLOAD_MAX_BYTES_PER_FILE, UPLOAD_MAX_FILES, UPLOAD_MAX_TOTAL_BYTES
 from server.jobs import JobStore
@@ -16,6 +17,9 @@ _MODEL_BY_BACKEND: dict[str, str] = {
     "codex": "gpt-5.5",
     "claude": "claude",
 }
+
+# 이메일 검증 정규식
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 def get_store(request: Request) -> JobStore:
@@ -193,3 +197,21 @@ def page_detail_route(
             raise HTTPException(409, "page not ready")
         raise HTTPException(404, "page not available")
     return PageDetail(pageNumber=n, filename=entry.filename, original=original, corrected=None)
+
+
+@router.post("/intent")
+def intent_route(email: str = Body(..., embed=True)) -> dict[str, str]:
+    """이메일 형식만 검증하는 스텁(미저장).
+
+    Args:
+        email: 검증할 이메일 주소
+
+    Returns:
+        상태 응답
+
+    Raises:
+        HTTPException: 이메일 형식이 유효하지 않으면 400
+    """
+    if not _EMAIL_RE.match(email):
+        raise HTTPException(400, "invalid email")
+    return {"status": "ok"}

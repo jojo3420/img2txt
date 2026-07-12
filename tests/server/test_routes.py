@@ -244,3 +244,25 @@ def test_page_detail_returns_page_with_original_and_null_corrected(
     assert data["pageNumber"] == 1
     assert data["original"] == "OCR 결과 텍스트"
     assert data["corrected"] is None
+
+
+def test_intent_accepts_valid_email(client: TestClient) -> None:
+    """유효한 이메일 형식으로 의향을 표현하면 200을 반환한다."""
+    resp = client.post("/api/intent", json={"email": "user@example.com"})
+
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "ok"}
+
+
+def test_intent_rejects_invalid_email(client: TestClient) -> None:
+    """유효하지 않은 이메일 형식으로 의향을 표현하면 400을 반환한다."""
+    resp = client.post("/api/intent", json={"email": "invalid-email"})
+
+    assert resp.status_code == 400
+
+
+def test_intent_rejects_email_without_domain(client: TestClient) -> None:
+    """도메인이 없는 이메일 형식으로 의향을 표현하면 400을 반환한다."""
+    resp = client.post("/api/intent", json={"email": "user@domain"})
+
+    assert resp.status_code == 400
