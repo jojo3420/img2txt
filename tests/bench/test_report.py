@@ -190,6 +190,7 @@ def test_build_run_meta_fields(tmp_path: Path) -> None:
     assert meta["record_type"] == "run_meta"
     assert meta["page_count"] == 1
     assert meta["preprocess"] == "upscale"
+    assert meta["preprocess_config"] == {"upscale_factor": 2.0}
     assert meta["min_confidence"] == 0.5
     assert len(meta["dataset_hash"]) == 32
     assert meta["python_version"].startswith("3.")

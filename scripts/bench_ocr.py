@@ -8,14 +8,16 @@ import json
 import logging
 import sys
 import time
+import uuid
 from dataclasses import replace
 from pathlib import Path
+from typing import Callable
 
 # 프로젝트 모듈
 from img2txt.bench.normalize import normalize_strict, normalize_lenient
 from img2txt.bench.scoring import cer, wer
-from img2txt.bench.dataset import load_pairs
-from img2txt.bench.runner import run_points
+from img2txt.bench.dataset import load_pairs, PagePair
+from img2txt.bench.runner import run_points, RecognizeFn
 from img2txt.bench.report import PageRecord, write_jsonl, summarize, build_run_meta
 from img2txt.bench.preprocess import LEVERS, apply_lever
 from img2txt.ocr import recognize_page, Page
@@ -87,7 +89,7 @@ def _default_label_adapter(label_path: Path) -> str:
     return label_path.read_text(encoding="utf-8").strip()
 
 
-def _make_recognize_fn(min_confidence: float | None):
+def _make_recognize_fn(min_confidence: float | None) -> RecognizeFn:
     """recognize_page 래퍼 생성. min_confidence가 있으면 미만 줄을 제외한다."""
 
     def _recognize(image_path: Path, page_num: int) -> Page:
@@ -176,7 +178,12 @@ def _create_error_records(pair, start_time: float, error: Exception) -> list[Pag
     return records
 
 
-def _score_page(pair, start_time: float, recognize_fn, preprocess_fn) -> list[PageRecord]:
+def _score_page(
+    pair: PagePair,
+    start_time: float,
+    recognize_fn: RecognizeFn,
+    preprocess_fn: Callable[[Path], Path] | None
+) -> list[PageRecord]:
     """페이지 3지점 채점 (raw, assembled, corrected).
 
     Args:
@@ -253,11 +260,14 @@ def main(argv: list[str] | None = None) -> int:
 
     logger.info("처리 페이지: %d개", len(pairs))
 
+    # 동시 실행 충돌 방지: run_suffix로 전처리 경로 격리
+    run_suffix = uuid.uuid4().hex[:8]
+
     # 인식 및 전처리 함수 조립
     recognize_fn = _make_recognize_fn(args.min_confidence)
     preprocess_fn = None
     if args.preprocess:
-        work_dir = args.output.parent / "preprocessed" / args.preprocess
+        work_dir = args.output.parent / "preprocessed" / f"{args.preprocess}-{run_suffix}"
         preprocess_fn = functools.partial(apply_lever, args.preprocess, work_dir=work_dir)
 
     # 3지점 채점
@@ -279,6 +289,8 @@ def main(argv: list[str] | None = None) -> int:
         page_count=len(pairs),
         preprocess=args.preprocess,
         min_confidence=args.min_confidence,
+        pairs=pairs,
+        run_suffix=run_suffix,
     )
     write_jsonl(records, args.output, run_meta=run_meta)
 

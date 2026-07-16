@@ -30,7 +30,13 @@ def _sample_entry(path: Path) -> dict:
 				"preview": raw[:PREVIEW_CHARS],
 			}
 		except json.JSONDecodeError:
-			pass
+			# 손상 JSON은 명시적으로 분류
+			return {
+				"name": path.name,
+				"kind": "invalid_json",
+				"top_level_keys": None,
+				"preview": raw[:PREVIEW_CHARS],
+			}
 	return {
 		"name": path.name,
 		"kind": "text",

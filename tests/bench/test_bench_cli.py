@@ -210,7 +210,9 @@ def test_preprocess_lever_wired(tmp_path: Path, monkeypatch) -> None:
 
     assert ret_code == 0
     assert len(received) == 1
-    assert received[0].parent == output_path.parent / "preprocessed" / "upscale"
+    # 전처리 경로는 run별 격리: preprocessed/<레버>-<uuid>/
+    assert received[0].parent.parent == output_path.parent / "preprocessed"
+    assert received[0].parent.name.startswith("upscale-")
     assert received[0].name == "page_001.png"
 
 

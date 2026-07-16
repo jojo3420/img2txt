@@ -81,3 +81,28 @@ def test_unknown_lever_raises(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError):
         apply_lever("sharpen", src, tmp_path / "work")
+
+
+def test_deskew_low_confidence_preserves_uniform(tmp_path: Path) -> None:
+    """균일 회색 이미지: deskew 저신뢰 → 원본 유지 (각도 0.0)."""
+    src = tmp_path / "page_001.png"
+    # 균일한 회색 이미지: 회전해도 행 분산 개선율이 5% 미만
+    uniform = Image.new("L", (200, 150), color=180)
+    uniform.save(src)
+
+    out_path = apply_lever("deskew", src, tmp_path / "work")
+
+    with Image.open(out_path) as out:
+        # 원본 유지되므로 크기 동일
+        assert out.size == uniform.size
+
+
+def test_estimate_skew_high_confidence_recovered(tmp_path: Path) -> None:
+    """줄무늬 이미지: 기울임 추정 및 회전 적용."""
+    rotated = _make_striped_image().rotate(2.0, expand=True, fillcolor=255)
+
+    estimated = estimate_skew_degrees(rotated)
+
+    # 줄무늬는 분산 개선율이 크므로 각도 추정 (0이 아님)
+    assert estimated != 0.0
+    assert estimated == pytest.approx(-2.0, abs=0.5)

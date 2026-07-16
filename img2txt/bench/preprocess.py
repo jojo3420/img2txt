@@ -18,6 +18,7 @@ DESKEW_MAX_DEGREES: float = 3.0
 DESKEW_STEP_DEGREES: float = 0.5
 # 각도 탐색은 축소본에서 수행 (속도) — 판정 각도만 원본에 적용
 DESKEW_SEARCH_WIDTH: int = 500
+DESKEW_MIN_IMPROVEMENT: float = 1.05
 BINARIZE_THRESHOLD: int = 128
 WHITE: int = 255
 
@@ -48,14 +49,18 @@ def estimate_skew_degrees(image: Image.Image) -> float:
 
     후보 각도(-DESKEW_MAX~+DESKEW_MAX, DESKEW_STEP 간격)로 회전해 보고
     행 분산이 최대가 되는 각도를 반환한다 (그 각도만큼 회전하면 반듯해짐).
+
+    저신뢰 필터: 0도 점수 대비 DESKEW_MIN_IMPROVEMENT(5%) 이상 개선되지 않으면
+    원본 유지를 위해 0.0을 반환한다.
     """
     gray = image.convert("L")
     if gray.width > DESKEW_SEARCH_WIDTH:
         ratio = DESKEW_SEARCH_WIDTH / gray.width
         gray = gray.resize((DESKEW_SEARCH_WIDTH, max(1, int(gray.height * ratio))))
 
+    zero_score = _row_variance(gray)
     best_angle = 0.0
-    best_score = _row_variance(gray)
+    best_score = zero_score
     steps = int(DESKEW_MAX_DEGREES / DESKEW_STEP_DEGREES)
     for i in range(-steps, steps + 1):
         angle = i * DESKEW_STEP_DEGREES
@@ -66,6 +71,10 @@ def estimate_skew_degrees(image: Image.Image) -> float:
         if score > best_score:
             best_score = score
             best_angle = angle
+
+    # 개선율 기준: 최고 점수가 0도 대비 DESKEW_MIN_IMPROVEMENT배 이상 아니면 원본 유지
+    if best_score < zero_score * DESKEW_MIN_IMPROVEMENT:
+        return 0.0
     return best_angle
 
 
@@ -82,6 +91,16 @@ LEVERS: dict[str, Callable[[Image.Image], Image.Image]] = {
     "contrast": _contrast,
     "upscale": _upscale,
     "deskew": _deskew,
+}
+
+LEVER_CONFIGS: dict[str, dict[str, float]] = {
+    "contrast": {"contrast_factor": CONTRAST_FACTOR},
+    "upscale": {"upscale_factor": UPSCALE_FACTOR},
+    "deskew": {
+        "deskew_max_degrees": DESKEW_MAX_DEGREES,
+        "deskew_step_degrees": DESKEW_STEP_DEGREES,
+        "deskew_min_improvement": DESKEW_MIN_IMPROVEMENT,
+    },
 }
 
 

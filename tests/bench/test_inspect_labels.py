@@ -45,3 +45,15 @@ def test_inspect_sample_count_limit(tmp_path: Path) -> None:
 
 	assert result["total_files"] == 5
 	assert len(result["samples"]) == 2
+
+
+def test_inspect_invalid_json(tmp_path: Path) -> None:
+	"""손상 JSON: kind=invalid_json, top_level_keys=None."""
+	(tmp_path / "page_001.json").write_text("{broken", encoding="utf-8")
+
+	result = inspect_dir(tmp_path)
+
+	assert result["total_files"] == 1
+	assert result["samples"][0]["kind"] == "invalid_json"
+	assert result["samples"][0]["top_level_keys"] is None
+	assert "{broken" in result["samples"][0]["preview"]
