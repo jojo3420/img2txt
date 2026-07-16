@@ -73,7 +73,7 @@ def _deskew(image: Image.Image) -> Image.Image:
     """deskew: 추정 각도만큼 회전. 각도 0이면 원본 유지 (글자 잘림 방지)."""
     angle = estimate_skew_degrees(image)
     if angle == 0.0:
-        return image
+        return image.copy()
     logger.info("deskew 적용: %.1f도", angle)
     return image.rotate(angle, expand=True, fillcolor=WHITE)
 

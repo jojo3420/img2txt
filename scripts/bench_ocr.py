@@ -232,6 +232,10 @@ def main(argv: list[str] | None = None) -> int:
         logger.error("라벨 디렉터리 없음: %s", args.label_dir)
         return 1
 
+    if args.min_confidence is not None and not 0.0 <= args.min_confidence <= 1.0:
+        logger.error("min-confidence는 0~1 범위여야 함: %s", args.min_confidence)
+        return 1
+
     # 데이터 로드
     try:
         pairs = load_pairs(args.image_dir, args.label_dir, _default_label_adapter, allow_skip=args.allow_skip)

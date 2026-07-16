@@ -212,3 +212,18 @@ def test_preprocess_lever_wired(tmp_path: Path, monkeypatch) -> None:
     assert len(received) == 1
     assert received[0].parent == output_path.parent / "preprocessed" / "upscale"
     assert received[0].name == "page_001.png"
+
+
+def test_min_confidence_out_of_range(tmp_path: Path) -> None:
+    """--min-confidence 범위 밖 값은 exit 1."""
+    image_dir = tmp_path / "images"
+    label_dir = tmp_path / "labels"
+    image_dir.mkdir()
+    label_dir.mkdir()
+
+    ret_code = main([
+        str(image_dir), str(label_dir), "-o", str(tmp_path / "report.jsonl"),
+        "--min-confidence", "5.0",
+    ])
+
+    assert ret_code == 1
