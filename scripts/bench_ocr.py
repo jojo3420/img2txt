@@ -8,17 +8,15 @@ import logging
 import sys
 import time
 from pathlib import Path
-from typing import Callable
 
 # 프로젝트 모듈
 from img2txt.bench.normalize import normalize_strict, normalize_lenient
-from img2txt.bench.scoring import cer, wer, aggregate_micro
+from img2txt.bench.scoring import cer, wer
 from img2txt.bench.dataset import load_pairs
 from img2txt.bench.runner import run_points
 from img2txt.bench.report import PageRecord, write_jsonl, summarize
 from img2txt.ocr import recognize_page
 from img2txt.corrector import correct_paragraphs
-from img2txt.backends.base import CorrectionBackend
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +72,105 @@ def _default_label_adapter(label_path: Path) -> str:
     return label_path.read_text(encoding="utf-8").strip()
 
 
+def _score_outputs(pair, outputs, start_time: float) -> list[PageRecord]:
+    """3지점 출력 채점.
+
+    Args:
+        pair: PagePair 인스턴스.
+        outputs: PointOutputs (raw, assembled, corrected).
+        start_time: 처리 시작 시간.
+
+    Returns:
+        PageRecord 리스트 (3개: raw, assembled, corrected).
+    """
+    records: list[PageRecord] = []
+    for point_name in ["raw", "assembled", "corrected"]:
+        point_text = getattr(outputs, point_name)
+        normalized_ref = normalize_strict(pair.reference_text)
+        normalized_output = normalize_strict(point_text)
+
+        cer_strict_score = cer(normalized_ref, normalized_output)
+        cer_lenient_score = cer(
+            pair.reference_text, point_text, normalize_fn=normalize_lenient
+        )
+        wer_score = wer(normalized_ref, normalized_output)
+
+        elapsed_ms = (time.time() - start_time) * 1000
+
+        record = PageRecord(
+            page_id=pair.page_id,
+            point=point_name,
+            reference_text=pair.reference_text,
+            output_text=point_text,
+            normalized_ref=normalized_ref,
+            normalized_output=normalized_output,
+            cer_strict=cer_strict_score,
+            cer_lenient=cer_lenient_score,
+            wer=wer_score,
+            processing_time_ms=elapsed_ms,
+            empty=outputs.empty,
+            error_status="",
+        )
+        records.append(record)
+    return records
+
+
+def _create_error_records(pair, start_time: float, error: Exception) -> list[PageRecord]:
+    """오류 발생 시 3지점 오류 레코드 생성.
+
+    Args:
+        pair: PagePair 인스턴스.
+        start_time: 처리 시작 시간.
+        error: 발생한 예외.
+
+    Returns:
+        PageRecord 리스트 (3개: 모두 오류 상태).
+    """
+    records: list[PageRecord] = []
+    for point in ["raw", "assembled", "corrected"]:
+        elapsed_ms = (time.time() - start_time) * 1000
+        record = PageRecord(
+            page_id=pair.page_id,
+            point=point,
+            reference_text=pair.reference_text,
+            output_text="",
+            normalized_ref="",
+            normalized_output="",
+            cer_strict=1.0,
+            cer_lenient=1.0,
+            wer=1.0,
+            processing_time_ms=elapsed_ms,
+            empty=False,
+            error_status=str(error),
+        )
+        records.append(record)
+    return records
+
+
+def _score_page(pair, start_time: float) -> list[PageRecord]:
+    """페이지 3지점 채점 (raw, assembled, corrected).
+
+    Args:
+        pair: PagePair 인스턴스.
+        start_time: 처리 시작 시간.
+
+    Returns:
+        3개의 PageRecord (raw, assembled, corrected) 리스트.
+    """
+    try:
+        outputs = run_points(
+            image_path=pair.image_path,
+            page_id=pair.page_id,
+            recognize_fn=recognize_page,
+            correct_fn=correct_paragraphs,
+            backend=None,
+        )
+        return _score_outputs(pair, outputs, start_time)
+    except Exception as e:
+        logger.error("처리 페이지 오류: %s", e)
+        return _create_error_records(pair, start_time, e)
+
+
 def main(argv: list[str] | None = None) -> int:
     """메인 함수.
 
@@ -126,59 +223,10 @@ def main(argv: list[str] | None = None) -> int:
 
     # 3지점 채점
     records: list[PageRecord] = []
-
     for pair in pairs:
         logger.info("처리 중: %s", pair.page_id)
         start_time = time.time()
-
-        try:
-            # 3지점 출력 생성
-            outputs = run_points(
-                image_path=pair.image_path,
-                page_id=pair.page_id,
-                recognize_fn=recognize_page,
-                correct_fn=correct_paragraphs,
-                backend=None,
-            )
-
-            # 3지점별 채점 (raw, assembled, corrected)
-            for point_name in ["raw", "assembled", "corrected"]:
-                point_text = getattr(outputs, point_name)
-
-                # 정규화 후 채점
-                normalized_ref_strict = normalize_strict(pair.reference_text)
-                normalized_output_strict = normalize_strict(point_text)
-
-                normalized_ref_lenient = normalize_lenient(pair.reference_text)
-                normalized_output_lenient = normalize_lenient(point_text)
-
-                cer_strict = cer(pair.reference_text, point_text, normalize_strict)
-                cer_lenient = cer(
-                    pair.reference_text, point_text, normalize_lenient
-                )
-                wer_score = wer(pair.reference_text, point_text)
-
-                elapsed_ms = (time.time() - start_time) * 1000
-
-                record = PageRecord(
-                    page_id=pair.page_id,
-                    point=point_name,
-                    reference_text=pair.reference_text,
-                    output_text=point_text,
-                    normalized_ref=normalized_ref_strict,
-                    normalized_output=normalized_output_strict,
-                    cer_strict=cer_strict,
-                    cer_lenient=cer_lenient,
-                    wer=wer_score,
-                    processing_time_ms=elapsed_ms,
-                    empty=outputs.empty,
-                    error_status="",
-                )
-                records.append(record)
-
-        except Exception as e:
-            logger.error("처리 중 오류: %s", e)
-            return 1
+        records.extend(_score_page(pair, start_time))
 
     # 리포트 저장
     write_jsonl(records, args.output)

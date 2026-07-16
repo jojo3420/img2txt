@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 import sys
 import json
 
 # scripts/bench_ocr.py의 main/argparse를 테스트하기 위해
 # 별도 함수로 분리했다고 가정
-from scripts.bench_ocr import parse_args
+from scripts.bench_ocr import parse_args, main
+from img2txt.ocr import OcrLine, Page
 
 
 def test_parse_args_basic() -> None:
@@ -46,7 +47,7 @@ def test_parse_args_missing_required() -> None:
         parse_args(["/tmp/images"])  # label_dir 누락
 
 
-def test_cli_integration_basic(tmp_path: Path) -> None:
+def test_cli_integration_basic(tmp_path: Path, monkeypatch) -> None:
     """CLI 통합 테스트: 이미지 1개 처리."""
     # 임시 디렉터리 설정
     image_dir = tmp_path / "images"
@@ -60,6 +61,33 @@ def test_cli_integration_basic(tmp_path: Path) -> None:
 
     output_path = tmp_path / "report.jsonl"
 
-    # 실제 main 함수 호출 (mock OCR)
-    # 이 부분은 구현 후 실제 하네스로 테스트
-    # 여기서는 argparse만 테스트하는 것이 기본 범위
+    # Mock OCR: 고정된 2줄 반환
+    def fake_recognize(image: Path, page_num: int) -> Page:
+        return Page(
+            number=page_num,
+            lines=[
+                OcrLine(text="첫째 줄", confidence=0.95, x=0.1, y=0.9, width=0.8, height=0.03),
+                OcrLine(text="둘째 줄", confidence=0.92, x=0.1, y=0.8, width=0.7, height=0.03),
+            ],
+        )
+
+    # recognize_page를 교체
+    monkeypatch.setattr("scripts.bench_ocr.recognize_page", fake_recognize)
+
+    # main 호출
+    ret_code = main([str(image_dir), str(label_dir), "-o", str(output_path)])
+
+    # 검증
+    assert ret_code == 0, f"main() 반환값이 0이 아님: {ret_code}"
+    assert output_path.exists(), f"리포트 파일이 없음: {output_path}"
+
+    # JSONL 파일 검증
+    lines = output_path.read_text(encoding="utf-8").strip().split("\n")
+    assert len(lines) == 3, f"레코드 수가 3이 아님: {len(lines)}"
+
+    # 각 레코드 검증
+    for i, line in enumerate(lines):
+        record = json.loads(line)
+        assert record["page_id"] == "page_001", f"page_id 불일치 (라인 {i}): {record['page_id']}"
+        expected_points = ["raw", "assembled", "corrected"]
+        assert record["point"] in expected_points, f"point 값 불명 (라인 {i}): {record['point']}"
