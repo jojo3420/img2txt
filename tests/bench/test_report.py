@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import json
 import pytest
-from img2txt.bench.report import PageRecord, write_jsonl, summarize
+from img2txt.bench.report import PageRecord, write_jsonl, summarize, build_run_meta
 
 
 def test_page_record_structure() -> None:
@@ -177,3 +177,45 @@ def test_summarize_side_effects() -> None:
 
     # 악화 페이지: assembled 0.1 < corrected 0.2
     assert summary["degraded_page_count"] == 1
+
+
+def test_build_run_meta_fields(tmp_path: Path) -> None:
+    """실행 메타: 필수 필드와 record_type 마커."""
+    (tmp_path / "page_001.png").write_bytes(b"fake")
+
+    meta = build_run_meta(
+        image_dir=tmp_path, page_count=1, preprocess="upscale", min_confidence=0.5
+    )
+
+    assert meta["record_type"] == "run_meta"
+    assert meta["page_count"] == 1
+    assert meta["preprocess"] == "upscale"
+    assert meta["min_confidence"] == 0.5
+    assert len(meta["dataset_hash"]) == 32
+    assert meta["python_version"].startswith("3.")
+
+
+def test_write_jsonl_with_run_meta(tmp_path: Path) -> None:
+    """run_meta가 있으면 JSONL 첫 줄이 메타 레코드다."""
+    record = PageRecord(
+        page_id="page_001",
+        point="raw",
+        reference_text="정답",
+        output_text="정딥",
+        normalized_ref="정답",
+        normalized_output="정딥",
+        cer_strict=0.5,
+        cer_lenient=0.5,
+        wer=1.0,
+        processing_time_ms=10.0,
+        empty=False,
+        error_status="",
+    )
+    output = tmp_path / "report.jsonl"
+
+    write_jsonl([record], output, run_meta={"record_type": "run_meta", "run_id": "r1"})
+
+    lines = output.read_text(encoding="utf-8").strip().split("\n")
+    assert len(lines) == 2
+    assert json.loads(lines[0])["record_type"] == "run_meta"
+    assert json.loads(lines[1])["page_id"] == "page_001"

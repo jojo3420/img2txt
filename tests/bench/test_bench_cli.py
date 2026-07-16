@@ -82,14 +82,21 @@ def test_cli_integration_basic(tmp_path: Path, monkeypatch) -> None:
 
     # JSONL 파일 검증
     lines = output_path.read_text(encoding="utf-8").strip().split("\n")
-    assert len(lines) == 3, f"레코드 수가 3이 아님: {len(lines)}"
+    assert len(lines) == 4, f"레코드 수가 4이 아님: {len(lines)}"
 
-    # 각 레코드 검증
-    for i, line in enumerate(lines):
-        record = json.loads(line)
-        assert record["page_id"] == "page_001", f"page_id 불일치 (라인 {i}): {record['page_id']}"
+    # 첫 줄은 메타 레코드
+    meta_record = json.loads(lines[0])
+    assert meta_record["record_type"] == "run_meta"
+    assert meta_record["page_count"] == 1
+
+    # 나머지 3개는 데이터 레코드
+    data_records = [json.loads(line) for line in lines[1:]]
+    assert len(data_records) == 3
+
+    for i, record in enumerate(data_records):
+        assert record["page_id"] == "page_001", f"page_id 불일치 (라인 {i+1}): {record['page_id']}"
         expected_points = ["raw", "assembled", "corrected"]
-        assert record["point"] in expected_points, f"point 값 불명 (라인 {i}): {record['point']}"
+        assert record["point"] in expected_points, f"point 값 불명 (라인 {i+1}): {record['point']}"
 
 
 def test_cli_all_pages_fail(tmp_path: Path, monkeypatch) -> None:

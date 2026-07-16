@@ -16,7 +16,7 @@ from img2txt.bench.normalize import normalize_strict, normalize_lenient
 from img2txt.bench.scoring import cer, wer
 from img2txt.bench.dataset import load_pairs
 from img2txt.bench.runner import run_points
-from img2txt.bench.report import PageRecord, write_jsonl, summarize
+from img2txt.bench.report import PageRecord, write_jsonl, summarize, build_run_meta
 from img2txt.bench.preprocess import LEVERS, apply_lever
 from img2txt.ocr import recognize_page, Page
 from img2txt.corrector import correct_paragraphs
@@ -270,7 +270,13 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     # 리포트 저장
-    write_jsonl(records, args.output)
+    run_meta = build_run_meta(
+        image_dir=args.image_dir,
+        page_count=len(pairs),
+        preprocess=args.preprocess,
+        min_confidence=args.min_confidence,
+    )
+    write_jsonl(records, args.output, run_meta=run_meta)
 
     # 요약 출력
     summary = summarize(records)
