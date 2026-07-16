@@ -119,7 +119,7 @@ class TestRunPoints:
                 backend=None,
             )
 
-            assert outputs.empty
+            assert not outputs.empty  # assembled에 "[페이지 N 누락]"이 있으므로
             assert len(correct_fn_called) == 0, "빈 페이지에서는 correct_fn이 호출되지 않아야 함"
             assert outputs.assembled == outputs.corrected
             assert outputs.segments == []
@@ -156,3 +156,44 @@ class TestRunPoints:
             assert all(isinstance(seg, str) for seg in outputs.segments)
         finally:
             image_path.unlink(missing_ok=True)
+    def test_run_points_nonstandard_page_id(self):
+        """비표준 page_id 처리: 숫자 없는 경우 및 scan001 형식."""
+        def fake_recognize(image: Path, page_num: int) -> Page:
+            return Page(
+                number=page_num,
+                lines=[
+                    OcrLine(text="테스트 텍스트", confidence=0.9, x=0.0, y=0.9, width=0.9, height=0.05),
+                ],
+            )
+
+        def fake_correct(paragraphs, model, backend):
+            return paragraphs, []
+
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+            image_path = Path(tmp.name)
+
+        try:
+            # 비표준 page_id 1: scan001 (숫자 포함)
+            outputs1 = run_points(
+                image_path=image_path,
+                page_id="scan001",
+                recognize_fn=fake_recognize,
+                correct_fn=fake_correct,
+                backend=None,
+            )
+            assert outputs1.page_id == "scan001"
+            assert "테스트 텍스트" in outputs1.raw
+
+            # 비표준 page_id 2: 숫자 없음 (fallback to 0)
+            outputs2 = run_points(
+                image_path=image_path,
+                page_id="no_number",
+                recognize_fn=fake_recognize,
+                correct_fn=fake_correct,
+                backend=None,
+            )
+            assert outputs2.page_id == "no_number"
+            assert "테스트 텍스트" in outputs2.raw
+        finally:
+            image_path.unlink(missing_ok=True)
+

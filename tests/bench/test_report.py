@@ -142,7 +142,7 @@ def test_summarize_with_empty_page() -> None:
 def test_summarize_side_effects() -> None:
     """요약: 부작용 지표 (악화 페이지)."""
     records = [
-        # 보정 후 악화: assembled CER 0.1 > corrected CER 0.2
+        # 보정 후 악화: assembled CER 0.1 < corrected CER 0.2
         PageRecord(
             page_id="page_001",
             point="assembled",
@@ -176,5 +176,4 @@ def test_summarize_side_effects() -> None:
     summary = summarize(records)
 
     # 악화 페이지: assembled 0.1 < corrected 0.2
-    if "degraded_page_count" in summary:
-        assert summary["degraded_page_count"] >= 0  # 구현에 따라 0 또는 1
+    assert summary["degraded_page_count"] == 1
