@@ -1,5 +1,28 @@
 # Progress
 
+## 프로젝트 소개
+
+한글 책을 스캔한 이미지에서 글자를 읽어(OCR, 광학 문자 인식) 텍스트 파일로 만들어 주는 도구다. 읽은 글자의 오탈자를 LLM(대규모 언어 모델)으로 교정하는 보정 단계가 있고, 명령줄(CLI)과 브라우저 업로드 방식(웹서비스) 두 가지로 쓸 수 있다. 현재는 개인용이며, 공개 서비스 전환 로드맵이 진행 중이다.
+
+## 주요 기능
+
+- 스캔 이미지 폴더 → 책 텍스트(book.txt) 변환 CLI (Apple Vision OCR, 한글)
+- LLM 오탈자 보정 (codex/claude/ollama 백엔드, 배치 처리 + 실시간 진행률)
+- 브라우저 업로드 → 텍스트 다운로드 개인용 웹서비스 (FastAPI 단일 포트)
+- 입력 포맷 JPEG/PNG/WEBP/TIFF 지원
+- OCR 정확도 자동 측정 도구 (`scripts/bench_ocr.py` — 정답 대비 글자/단어 오류율 CER/WER 채점, JSONL 리포트)
+
+## 진행 기록
+
+## 2026-07-16 - OCR 품질 자동 측정 도구(벤치 하네스) + PR #8
+- 상태: 완료 (PR #8 머지 대기)
+- 완료한 일: OCR 결과를 정답과 비교해 정확도를 숫자(CER 글자 오류율/WER 단어 오류율)로 자동 채점하는 도구 완성. 파이프라인 3지점(원시 OCR/조립본/보정본)을 한 번에 측정하는 CLI와 테스트 49개. GitHub PR 생성 후 Codex 리뷰 High 4건(집계 왜곡, 빈 페이지 오판, --allow-skip 버그, 전체 실패 종료코드)을 반영.
+- 커밋/PR: `97d7bfe`(설계 문서)~`db440f4`(리뷰 반영), 14커밋, PR #8 https://github.com/jojo3420/img2txt/pull/8 (base main, 미머지)
+- 결정사항: (1) micro CER은 정규화 길이로 가중. (2) 빈 페이지 판정은 layout.is_empty 기준. (3) 보정 지점은 스펙 7절(LLM 비교) 전까지 backend=None — corrected는 assembled와 동일. (4) levenshtein은 Sequence[T]로 일반화(WER 단어 단위 요구, str 하위 호환).
+- 남은 일: (1) PR #8 머지 (사용자 결정). (2) Codex Medium 5건 follow-up — WER micro화, empty 페이지 중복 카운트, dataset glob 필터, DP 메모리 절감, segments 의미. (3) AI Hub 실제 라벨 어댑터 + 30~50페이지 실측 스모크. (4) 스펙 6절(전처리)/7절(LLM 비교) 별도 플랜.
+- 관련 문서: docs/superpowers/specs/2026-07-13-ocr-llm-quality-harness-design.md, docs/superpowers/plans/2026-07-13-ocr-quality-harness.md, tobyteam/cpr-review-8-20260716-154045.md
+- 상세 히스토리: 없음
+
 ## 2026-07-12 - 보정 진행률 실시간 표시 수정 (멈춘 것처럼 보이던 문제)
 - 상태: 완료
 - 완료한 일: 보정(LLM 오탈자 교정) 단계에서 진행률이 "0/N"에 멈춘 것처럼 보이던 문제 해결. 실제로는 백그라운드에서 정상 처리 중이었으나 UI가 중간 진행을 못 받아오는 구조였음 - 문단 묶음(배치, 10문단)마다 진행을 보고하도록 콜백을 추가해 숫자가 실시간으로 오르게 함. "남은 시간 약 0초"로 잘못 뜨던 것도 남은 보정 문단 기준으로 계산하도록 수정.
