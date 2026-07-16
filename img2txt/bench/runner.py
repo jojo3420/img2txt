@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
@@ -30,8 +30,8 @@ class PointOutputs:
     raw: str
     assembled: str
     corrected: str
-    segments: list[str]
-    empty: bool
+    segments: list[str] = field(default_factory=list)
+    empty: bool = False
 
 
 def run_points(
@@ -53,35 +53,35 @@ def run_points(
     Returns:
         PointOutputs: 3지점 (raw, assembled, corrected) + 메타데이터.
     """
-    # 1단계: OCR 인식 (page_num은 0부터 시작)
-    page = recognize_fn(image_path, 0)
+    # 1단계: page_id에서 page_num 추출 및 OCR 인식
+    page_num = int(page_id.split("_")[-1])
+    page = recognize_fn(image_path, page_num)
 
     # 2단계: 원시 텍스트 정규화
     raw_lines = [normalize_strict(line.text) for line in page.lines]
     raw_text = " ".join(raw_lines)
 
-    # 3단계: 빈 페이지 체크
-    is_empty = len(raw_text.strip()) == 0
+    # 3단계: 레이아웃 분석 및 조립
+    layout = analyze_page(page)
+    assembled_text = assemble([layout])
+    assembled_normalized = normalize_strict(assembled_text)
 
-    # 4단계: 레이아웃 분석 및 조립
-    if is_empty:
-        assembled_text = ""
+    # 4단계: 보정 (backend가 None이면 스킵)
+    paragraphs = list(layout.paragraphs) if layout.paragraphs else []
+    if backend and paragraphs:
+        corrected_paragraphs, _ = correct_fn(paragraphs, "", backend)
+        corrected_text = "\n\n".join(corrected_paragraphs)
     else:
-        layout = analyze_page(page)
-        layout.is_empty = is_empty  # 빈 페이지 플래그 설정
-        assembled_text = assemble([layout])
+        corrected_text = assembled_text
+    corrected_normalized = normalize_strict(corrected_text)
 
-    # 5단계: 문단 추출 및 보정
-    paragraphs = assembled_text.split("\n\n") if assembled_text.strip() else []
-    corrected_paragraphs, _ = correct_fn(paragraphs, "", backend)
-    corrected_text = "\n\n".join(corrected_paragraphs)
-
-    # 6단계: 최종 출력 구성
+    # 5단계: 최종 출력 구성
+    segments = [p for p in paragraphs if p.strip()]
     return PointOutputs(
         page_id=page_id,
-        raw=raw_text,
-        assembled=assembled_text,
-        corrected=corrected_text,
-        segments=corrected_paragraphs,
-        empty=is_empty,
+        raw=normalize_strict(raw_text),
+        assembled=assembled_normalized,
+        corrected=corrected_normalized,
+        segments=segments,
+        empty=layout.is_empty,
     )

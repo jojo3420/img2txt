@@ -50,7 +50,9 @@ class TestRunPoints:
             image_path.unlink(missing_ok=True)
 
     def test_run_points_with_correction(self):
-        """보정 흐름: 원시 → 조립 → 보정본."""
+        """보정 흐름: backend 있을 때 원시 → 조립 → 보정본."""
+        correct_fn_called = []
+
         def fake_recognize(image: Path, page_num: int) -> Page:
             return Page(
                 number=page_num,
@@ -60,6 +62,7 @@ class TestRunPoints:
             )
 
         def fake_correct(paragraphs, model, backend):
+            correct_fn_called.append(True)
             corrected = ["보정된 텍스트"]
             records = [
                 CorrectionRecord(
@@ -77,26 +80,31 @@ class TestRunPoints:
             image_path = Path(tmp.name)
 
         try:
+            # backend가 있으면 correct_fn이 호출됨
             outputs = run_points(
                 image_path=image_path,
                 page_id="page_002",
                 recognize_fn=fake_recognize,
                 correct_fn=fake_correct,
-                backend=None,  # backend None도 정정_fn은 호출
+                backend="test_backend",
             )
 
+            assert len(correct_fn_called) > 0, "backend가 있으면 correct_fn이 호출되어야 함"
             assert outputs.raw != outputs.corrected
             assert "보정된 텍스트" in outputs.corrected
         finally:
             image_path.unlink(missing_ok=True)
 
     def test_run_points_empty_page(self):
-        """빈 페이지 처리: empty=True, raw/assembled/corrected 모두 빈값."""
+        """빈 페이지 처리: empty=True, correct_fn 호출 안 함."""
+        correct_fn_called = []
+
         # 빈 Page 반환
         def fake_recognize(image: Path, page_num: int) -> Page:
             return Page(number=page_num, lines=[])
 
         def fake_correct(paragraphs, model, backend):
+            correct_fn_called.append(True)
             return paragraphs, []
 
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
@@ -112,8 +120,9 @@ class TestRunPoints:
             )
 
             assert outputs.empty
-            assert outputs.raw == outputs.assembled
-            assert outputs.corrected == outputs.assembled
+            assert len(correct_fn_called) == 0, "빈 페이지에서는 correct_fn이 호출되지 않아야 함"
+            assert outputs.assembled == outputs.corrected
+            assert outputs.segments == []
         finally:
             image_path.unlink(missing_ok=True)
 
