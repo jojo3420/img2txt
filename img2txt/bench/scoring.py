@@ -8,6 +8,9 @@ T = TypeVar("T")
 def levenshtein(a: Sequence[T], b: Sequence[T]) -> int:
     """편집거리(Levenshtein distance)를 동적계획법으로 계산.
 
+    플랜 인터페이스의 str 시그니처를 Sequence[T]로 일반화하여 WER 계산 시 단어 단위 편집거리를 직접 적용 가능하게 했다.
+    str도 Sequence[str]의 부분 사례이므로 기존 호출과 하위 호환을 유지한다.
+
     Args:
         a: 첫 번째 시퀀스 (문자열 또는 리스트).
         b: 두 번째 시퀀스 (문자열 또는 리스트).

@@ -1775,3 +1775,4 @@ Task 6 (CLI) [모든 Task 1~5 의존]
 - AI Hub 라벨 구조 미확인 → 현재는 txt 픽스처만 테스트, 실제 어댑터는 Follow-up
 - OCR (recognize_page)는 macOS Apple Vision 의존 → 테스트는 가짜 함수 주입으로 격리
 - 보정 (correct_paragraphs)는 LLM/Ollama 의존 → 테스트는 backend=None으로 스킵
+- Task 2 구현 노트: levenshtein 시그니처를 str → Sequence[T]로 일반화 (브리프 예시 코드의 join 방식은 WER 단어 단위 테스트와 모순 — 테스트/docstring 의도를 따름, str 하위 호환)

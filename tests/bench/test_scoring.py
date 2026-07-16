@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import pytest
 from img2txt.bench.scoring import levenshtein, cer, wer, aggregate_micro
-from img2txt.bench.normalize import normalize_lenient
 
 def test_levenshtein_identical() -> None:
     """같은 문자열: 거리 0."""
