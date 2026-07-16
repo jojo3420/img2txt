@@ -47,7 +47,7 @@ def build_run_meta(
     Returns:
         메타 레코드 dict.
     """
-    now = datetime.now().isoformat()
+    now = datetime.now().isoformat(timespec="seconds")
     entries = [f"{f.name}:{f.stat().st_size}" for f in sorted(image_dir.glob("*")) if f.is_file()]
     dataset_hash = hashlib.md5("\n".join(entries).encode("utf-8")).hexdigest()
 
