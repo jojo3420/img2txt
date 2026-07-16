@@ -40,6 +40,7 @@ def run_points(
     recognize_fn: RecognizeFn,
     correct_fn: CorrectFn,
     backend: CorrectionBackend | None,
+    preprocess_fn: Callable[[Path], Path] | None = None,
 ) -> PointOutputs:
     """이미지 1장을 3지점까지 처리하고 원시 출력을 반환한다.
 
@@ -52,6 +53,7 @@ def run_points(
         recognize_fn: OCR 함수 (Path, int -> Page). 테스트용 의존성 주입.
         correct_fn: 보정 함수. 테스트용 의존성 주입.
         backend: 보정 백엔드 (None이면 보정 스킵).
+        preprocess_fn: 전처리 함수 (Path -> 전처리본 Path). None이면 원본 사용.
 
     Returns:
         PointOutputs: 3지점 (raw, assembled, corrected) 원시 출력 + 메타데이터.
@@ -63,6 +65,10 @@ def run_points(
     else:
         page_num = 0
         logger.warning(f"page_id '{page_id}'에서 숫자를 추출할 수 없음, 0으로 설정")
+
+    if preprocess_fn is not None:
+        image_path = preprocess_fn(image_path)
+
     page = recognize_fn(image_path, page_num)
 
     # 2단계: 원시 텍스트 (정규화 미적용)

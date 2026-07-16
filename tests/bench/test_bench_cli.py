@@ -118,3 +118,90 @@ def test_cli_all_pages_fail(tmp_path: Path, monkeypatch) -> None:
 
     # 검증: 모든 페이지 실패했으므로 exit 1
     assert ret_code == 1, f"main() 반환값이 1이 아님: {ret_code}"
+
+
+def test_parse_args_preprocess_and_confidence() -> None:
+    """--preprocess와 --min-confidence 파싱 + 기본값."""
+    args = parse_args([
+        "/tmp/images",
+        "/tmp/labels",
+        "-o", "/tmp/report.jsonl",
+        "--preprocess", "upscale",
+        "--min-confidence", "0.5",
+    ])
+    assert args.preprocess == "upscale"
+    assert args.min_confidence == 0.5
+
+    defaults = parse_args(["/tmp/images", "/tmp/labels", "-o", "/tmp/report.jsonl"])
+    assert defaults.preprocess is None
+    assert defaults.min_confidence is None
+
+
+def test_min_confidence_filters_lines(tmp_path: Path, monkeypatch) -> None:
+    """--min-confidence: 임계 미만 confidence 줄이 raw에서 제외된다."""
+    image_dir = tmp_path / "images"
+    label_dir = tmp_path / "labels"
+    image_dir.mkdir()
+    label_dir.mkdir()
+    (image_dir / "page_001.png").touch()
+    (label_dir / "page_001.txt").write_text("정답")
+    output_path = tmp_path / "report.jsonl"
+
+    def fake_recognize(image: Path, page_num: int) -> Page:
+        return Page(
+            number=page_num,
+            lines=[
+                OcrLine(text="높음", confidence=0.9, x=0.1, y=0.9, width=0.8, height=0.03),
+                OcrLine(text="낮음", confidence=0.2, x=0.1, y=0.8, width=0.7, height=0.03),
+            ],
+        )
+
+    monkeypatch.setattr("scripts.bench_ocr.recognize_page", fake_recognize)
+
+    ret_code = main([
+        str(image_dir), str(label_dir), "-o", str(output_path),
+        "--min-confidence", "0.5",
+    ])
+
+    assert ret_code == 0
+    lines = output_path.read_text(encoding="utf-8").strip().split("\n")
+    raw_records = [json.loads(l) for l in lines if json.loads(l).get("point") == "raw"]
+    assert len(raw_records) == 1
+    assert "높음" in raw_records[0]["output_text"]
+    assert "낮음" not in raw_records[0]["output_text"]
+
+
+def test_preprocess_lever_wired(tmp_path: Path, monkeypatch) -> None:
+    """--preprocess: recognize가 전처리본 경로(preprocessed/<레버>/)를 받는다."""
+    image_dir = tmp_path / "images"
+    label_dir = tmp_path / "labels"
+    image_dir.mkdir()
+    label_dir.mkdir()
+    output_path = tmp_path / "report.jsonl"
+
+    from PIL import Image
+    Image.new("L", (40, 30), color=255).save(image_dir / "page_001.png")
+    (label_dir / "page_001.txt").write_text("정답")
+
+    received: list[Path] = []
+
+    def fake_recognize(image: Path, page_num: int) -> Page:
+        received.append(Path(image))
+        return Page(
+            number=page_num,
+            lines=[
+                OcrLine(text="본문", confidence=0.9, x=0.1, y=0.9, width=0.8, height=0.03),
+            ],
+        )
+
+    monkeypatch.setattr("scripts.bench_ocr.recognize_page", fake_recognize)
+
+    ret_code = main([
+        str(image_dir), str(label_dir), "-o", str(output_path),
+        "--preprocess", "upscale",
+    ])
+
+    assert ret_code == 0
+    assert len(received) == 1
+    assert received[0].parent == output_path.parent / "preprocessed" / "upscale"
+    assert received[0].name == "page_001.png"
