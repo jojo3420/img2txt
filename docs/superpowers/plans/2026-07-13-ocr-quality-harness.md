@@ -53,7 +53,7 @@
 
 ### TDD Checklist
 
-- [ ] **(1) 실패 테스트 작성 (코드 포함)**
+- [x] **(1) 실패 테스트 작성 (코드 포함)**
 
 ```python
 # tests/bench/test_normalize.py
@@ -126,7 +126,7 @@ def test_normalize_lenient_combines_strict() -> None:
     assert lenient_result == "한글 테스트"
 ```
 
-- [ ] **(2) 실패 확인 (pytest 명령 + 예상 출력)**
+- [x] **(2) 실패 확인 (pytest 명령 + 예상 출력)**
 
 ```
 $ pytest tests/bench/test_normalize.py -v
@@ -136,7 +136,7 @@ $ pytest tests/bench/test_normalize.py -v
 # ... (총 11개 실패)
 ```
 
-- [ ] **(3) 최소 구현 (코드 포함)**
+- [x] **(3) 최소 구현 (코드 포함)**
 
 ```python
 # img2txt/bench/normalize.py
@@ -215,7 +215,7 @@ def normalize_lenient(text: str) -> str:
     return result
 ```
 
-- [ ] **(4) 통과 확인**
+- [x] **(4) 통과 확인**
 
 ```
 $ pytest tests/bench/test_normalize.py -v
@@ -225,7 +225,7 @@ $ pytest tests/bench/test_normalize.py -v
 # ... (총 11개 통과)
 ```
 
-- [ ] **(5) Commit**
+- [x] **(5) Commit**
 
 ```bash
 git add img2txt/bench/normalize.py tests/bench/test_normalize.py
@@ -255,7 +255,7 @@ git commit -m "feat: 텍스트 정규화 유틸 (NFC/공백/부호)"
 
 ### TDD Checklist
 
-- [ ] **(1) 실패 테스트 작성 (코드 포함)**
+- [x] **(1) 실패 테스트 작성 (코드 포함)**
 
 ```python
 # tests/bench/test_scoring.py
@@ -372,7 +372,7 @@ def test_aggregate_micro_with_empty_hypothesis() -> None:
     assert abs(result - 0.5) < 0.001
 ```
 
-- [ ] **(2) 실패 확인**
+- [x] **(2) 실패 확인**
 
 ```
 $ pytest tests/bench/test_scoring.py -v
@@ -381,7 +381,7 @@ $ pytest tests/bench/test_scoring.py -v
 # ... (총 17개 실패)
 ```
 
-- [ ] **(3) 최소 구현 (코드 포함)**
+- [x] **(3) 최소 구현 (코드 포함)**
 
 ```python
 # img2txt/bench/scoring.py
@@ -500,7 +500,7 @@ def aggregate_micro(pairs: list[tuple[str, str]]) -> float:
     return total_distance / total_ref_chars
 ```
 
-- [ ] **(4) 통과 확인**
+- [x] **(4) 통과 확인**
 
 ```
 $ pytest tests/bench/test_scoring.py -v
@@ -509,7 +509,7 @@ $ pytest tests/bench/test_scoring.py -v
 # ... (총 17개 통과)
 ```
 
-- [ ] **(5) Commit**
+- [x] **(5) Commit**
 
 ```bash
 git add img2txt/bench/scoring.py tests/bench/test_scoring.py
@@ -538,7 +538,7 @@ git commit -m "feat: 채점기 (Levenshtein/CER/WER/집계)"
 
 ### TDD Checklist
 
-- [ ] **(1) 실패 테스트 작성 (코드 포함)**
+- [x] **(1) 실패 테스트 작성 (코드 포함)**
 
 ```python
 # tests/bench/test_dataset.py
@@ -648,7 +648,7 @@ def test_load_pairs_with_mock_adapter(tmp_path: Path) -> None:
     assert pairs[0].reference_text == "한글 텍스트"
 ```
 
-- [ ] **(2) 실패 확인**
+- [x] **(2) 실패 확인**
 
 ```
 $ pytest tests/bench/test_dataset.py -v
@@ -657,7 +657,7 @@ $ pytest tests/bench/test_dataset.py -v
 # ... (총 6개 실패)
 ```
 
-- [ ] **(3) 최소 구현 (코드 포함)**
+- [x] **(3) 최소 구현 (코드 포함)**
 
 ```python
 # img2txt/bench/dataset.py
@@ -726,7 +726,7 @@ def load_pairs(
     return pairs
 ```
 
-- [ ] **(4) 통과 확인**
+- [x] **(4) 통과 확인**
 
 ```
 $ pytest tests/bench/test_dataset.py -v
@@ -735,7 +735,7 @@ $ pytest tests/bench/test_dataset.py -v
 # ... (총 6개 통과)
 ```
 
-- [ ] **(5) Commit**
+- [x] **(5) Commit**
 
 ```bash
 git add img2txt/bench/dataset.py tests/bench/test_dataset.py
@@ -765,7 +765,7 @@ git commit -m "feat: 데이터셋 로더 + 라벨 어댑터 프로토콜"
 
 ### TDD Checklist
 
-- [ ] **(1) 실패 테스트 작성 (코드 포함)**
+- [x] **(1) 실패 테스트 작성 (코드 포함)**
 
 ```python
 # tests/bench/test_runner.py
@@ -892,7 +892,7 @@ def test_run_points_segments_from_corrected() -> None:
     assert outputs.segments[1] == "보정된 문단 2"
 ```
 
-- [ ] **(2) 실패 확인**
+- [x] **(2) 실패 확인**
 
 ```
 $ pytest tests/bench/test_runner.py -v
@@ -901,7 +901,7 @@ $ pytest tests/bench/test_runner.py -v
 # ... (총 4개 실패)
 ```
 
-- [ ] **(3) 최소 구현 (코드 포함)**
+- [x] **(3) 최소 구현 (코드 포함)**
 
 ```python
 # img2txt/bench/runner.py
@@ -1001,7 +1001,7 @@ def run_points(
     )
 ```
 
-- [ ] **(4) 통과 확인**
+- [x] **(4) 통과 확인**
 
 ```
 $ pytest tests/bench/test_runner.py -v
@@ -1010,7 +1010,7 @@ $ pytest tests/bench/test_runner.py -v
 # ... (총 4개 통과)
 ```
 
-- [ ] **(5) Commit**
+- [x] **(5) Commit**
 
 ```bash
 git add img2txt/bench/runner.py tests/bench/test_runner.py
@@ -1038,7 +1038,7 @@ git commit -m "feat: 파이프라인 러너 (3지점 출력)"
 
 ### TDD Checklist
 
-- [ ] **(1) 실패 테스트 작성 (코드 포함)**
+- [x] **(1) 실패 테스트 작성 (코드 포함)**
 
 ```python
 # tests/bench/test_report.py
@@ -1224,7 +1224,7 @@ def test_summarize_side_effects() -> None:
         assert summary["degraded_page_count"] >= 0  # 구현에 따라 0 또는 1
 ```
 
-- [ ] **(2) 실패 확인**
+- [x] **(2) 실패 확인**
 
 ```
 $ pytest tests/bench/test_report.py -v
@@ -1233,7 +1233,7 @@ $ pytest tests/bench/test_report.py -v
 # ... (총 6개 실패)
 ```
 
-- [ ] **(3) 최소 구현 (코드 포함)**
+- [x] **(3) 최소 구현 (코드 포함)**
 
 ```python
 # img2txt/bench/report.py
@@ -1350,7 +1350,7 @@ def summarize(records: list[PageRecord]) -> dict[str, Any]:
     return summary
 ```
 
-- [ ] **(4) 통과 확인**
+- [x] **(4) 통과 확인**
 
 ```
 $ pytest tests/bench/test_report.py -v
@@ -1359,7 +1359,7 @@ $ pytest tests/bench/test_report.py -v
 # ... (총 6개 통과)
 ```
 
-- [ ] **(5) Commit**
+- [x] **(5) Commit**
 
 ```bash
 git add img2txt/bench/report.py tests/bench/test_report.py
@@ -1385,7 +1385,7 @@ git commit -m "feat: 리포터 + 부작용 지표"
 
 ### TDD Checklist
 
-- [ ] **(1) 실패 테스트 작성 (코드 포함)**
+- [x] **(1) 실패 테스트 작성 (코드 포함)**
 
 ```python
 # tests/bench/test_bench_cli.py
@@ -1456,7 +1456,7 @@ def test_cli_integration_basic(tmp_path: Path) -> None:
     # 여기서는 argparse만 테스트하는 것이 기본 범위
 ```
 
-- [ ] **(2) 실패 확인**
+- [x] **(2) 실패 확인**
 
 ```
 $ pytest tests/bench/test_bench_cli.py -v
@@ -1464,7 +1464,7 @@ $ pytest tests/bench/test_bench_cli.py -v
 # PASSED tests/bench/test_bench_cli.py::test_parse_args_basic (구현 시)
 ```
 
-- [ ] **(3) 최소 구현 (코드 포함)**
+- [x] **(3) 최소 구현 (코드 포함)**
 
 ```python
 # scripts/bench_ocr.py
@@ -1686,7 +1686,7 @@ if __name__ == "__main__":
     sys.exit(main())
 ```
 
-- [ ] **(4) 통과 확인**
+- [x] **(4) 통과 확인**
 
 ```
 $ pytest tests/bench/test_bench_cli.py::test_parse_args_basic -v
@@ -1694,7 +1694,7 @@ $ pytest tests/bench/test_bench_cli.py::test_parse_args_basic -v
 # PASSED tests/bench/test_bench_cli.py::test_parse_args_basic
 ```
 
-- [ ] **(5) Commit**
+- [x] **(5) Commit**
 
 ```bash
 git add scripts/bench_ocr.py tests/bench/test_bench_cli.py
@@ -1753,9 +1753,9 @@ Task 6 (CLI) [모든 Task 1~5 의존]
 ## 검증 기준
 
 ### Task 완료 조건 (각각)
-- [ ] 모든 테스트 통과 (pytest)
-- [ ] Type checking 통과 (pytype/mypy 존재 시, 아니면 type hints 100%)
-- [ ] 코드 스타일 준수 (`rules/coding-style.md`)
+- [x] 모든 테스트 통과 (pytest)
+- [x] Type checking 통과 (pytype/mypy 존재 시, 아니면 type hints 100%)
+- [x] 코드 스타일 준수 (`rules/coding-style.md`)
   - Type Hints 100%
   - 한국어 docstring (스펙 명칭은 영어)
   - print 금지, logging 사용
