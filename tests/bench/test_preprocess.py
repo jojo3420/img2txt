@@ -49,7 +49,7 @@ def test_contrast_spreads_midtones(tmp_path: Path) -> None:
     out_path = apply_lever("contrast", src, tmp_path / "work")
 
     with Image.open(out_path) as out:
-        values = sorted(set(out.getdata()))
+        values = sorted(set(out.tobytes()))
     assert values[-1] - values[0] > 20
 
 

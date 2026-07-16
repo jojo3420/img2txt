@@ -36,9 +36,9 @@ def _upscale(image: Image.Image) -> Image.Image:
 def _row_variance(image: Image.Image) -> float:
     """이진화된 행 합의 분산 — 텍스트 행이 수평일수록 커진다."""
     binary = image.point(lambda p: 0 if p < BINARIZE_THRESHOLD else 1)
-    pixels = list(binary.getdata())
+    data = binary.tobytes()
     width, height = binary.size
-    rows = [sum(pixels[y * width : (y + 1) * width]) for y in range(height)]
+    rows = [sum(data[y * width : (y + 1) * width]) for y in range(height)]
     mean = sum(rows) / len(rows)
     return sum((r - mean) ** 2 for r in rows) / len(rows)
 
