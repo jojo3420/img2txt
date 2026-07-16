@@ -199,3 +199,36 @@ class TestRunPoints:
         finally:
             image_path.unlink(missing_ok=True)
 
+    def test_run_points_applies_preprocess_fn(self, tmp_path: Path):
+        """preprocess_fn이 있으면 변환된 경로가 recognize_fn에 전달된다."""
+        received: list[Path] = []
+        original = tmp_path / "page_001.png"
+        preprocessed = tmp_path / "work" / "page_001.png"
+
+        def fake_preprocess(image_path: Path) -> Path:
+            return preprocessed
+
+        def fake_recognize(image: Path, page_num: int) -> Page:
+            received.append(image)
+            return Page(
+                number=page_num,
+                lines=[
+                    OcrLine(text="가나다", confidence=0.9, x=0.1, y=0.9, width=0.8, height=0.03),
+                ],
+            )
+
+        def fake_correct(paragraphs, model, backend):
+            return paragraphs, []
+
+        outputs = run_points(
+            image_path=original,
+            page_id="page_001",
+            recognize_fn=fake_recognize,
+            correct_fn=fake_correct,
+            backend=None,
+            preprocess_fn=fake_preprocess,
+        )
+
+        assert received == [preprocessed], "recognize_fn은 전처리된 경로를 받아야 함"
+        assert "가나다" in outputs.raw
+

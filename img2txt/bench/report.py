@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+import hashlib
+import importlib.metadata
 import json
 import logging
+import platform
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from img2txt.bench.normalize import normalize_lenient
+from img2txt.bench.dataset import PagePair
+from img2txt.bench.preprocess import LEVER_CONFIGS
 
 logger = logging.getLogger(__name__)
 
@@ -29,16 +35,82 @@ class PageRecord:
     error_status: str           # 오류 메시지 (정상이면 "")
 
 
-def write_jsonl(records: list[PageRecord], output_path: Path) -> None:
+def build_run_meta(
+    image_dir: Path,
+    page_count: int,
+    preprocess: str | None,
+    min_confidence: float | None,
+    pairs: list[PagePair] | None = None,
+    run_suffix: str | None = None,
+) -> dict[str, Any]:
+    """실행 메타 레코드 생성.
+
+    Args:
+        image_dir: 이미지 디렉터리 경로.
+        page_count: 처리한 페이지 수.
+        preprocess: 전처리 레버 이름 또는 None.
+        min_confidence: OCR confidence 필터 임계값 또는 None.
+        pairs: 실제 처리 대상 PagePair 리스트 (있으면 이를 기준으로 해시 계산).
+        run_suffix: run_id에 붙일 suffix (있으면 사용, 없으면 내부 생성).
+
+    Returns:
+        메타 레코드 dict.
+    """
+    now = datetime.now().isoformat(timespec="seconds")
+
+    if pairs:
+        # 실제 처리 대상 기준 해시: page_id, image_size, reference_text 길이
+        entries = [
+            f"{p.page_id}:{p.image_path.stat().st_size}:{len(p.reference_text)}"
+            for p in pairs
+        ]
+        dataset_hash = hashlib.md5("\n".join(entries).encode("utf-8")).hexdigest()
+    else:
+        # 기존 image_dir 방식 유지 (하위 호환)
+        entries = [f"{f.name}:{f.stat().st_size}" for f in sorted(image_dir.glob("*")) if f.is_file()]
+        dataset_hash = hashlib.md5("\n".join(entries).encode("utf-8")).hexdigest()
+
+    try:
+        ocrmac_version = importlib.metadata.version("ocrmac")
+    except importlib.metadata.PackageNotFoundError:
+        ocrmac_version = "unknown"
+
+    if run_suffix:
+        run_id = f"run-{now}-{run_suffix}"
+    else:
+        import uuid
+        run_suffix = uuid.uuid4().hex[:8]
+        run_id = f"run-{now}-{run_suffix}"
+
+    return {
+        "record_type": "run_meta",
+        "run_id": run_id,
+        "image_dir": str(image_dir),
+        "dataset_hash": dataset_hash,
+        "page_count": page_count,
+        "preprocess": preprocess,
+        "preprocess_config": LEVER_CONFIGS.get(preprocess) if preprocess else None,
+        "min_confidence": min_confidence,
+        "python_version": platform.python_version(),
+        "ocrmac_version": ocrmac_version,
+        "created_at": now,
+    }
+
+
+def write_jsonl(records: list[PageRecord], output_path: Path, run_meta: dict[str, Any] | None = None) -> None:
     """PageRecord 리스트를 JSONL로 저장.
 
     Args:
         records: 레코드 리스트.
         output_path: 출력 파일 경로.
+        run_meta: 실행 메타 레코드 (선택사항).
     """
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     with open(output_path, "w", encoding="utf-8") as f:
+        if run_meta is not None:
+            line = json.dumps(run_meta, ensure_ascii=False)
+            f.write(line + "\n")
         for record in records:
             line = json.dumps(asdict(record), ensure_ascii=False)
             f.write(line + "\n")
