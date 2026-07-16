@@ -14,13 +14,13 @@
 
 ## 진행 기록
 
-## 2026-07-16 - OCR 품질 자동 측정 도구(벤치 하네스) + PR #8
-- 상태: 완료 (PR #8 머지 대기)
-- 완료한 일: OCR 결과를 정답과 비교해 정확도를 숫자(CER 글자 오류율/WER 단어 오류율)로 자동 채점하는 도구 완성. 파이프라인 3지점(원시 OCR/조립본/보정본)을 한 번에 측정하는 CLI와 테스트 49개. GitHub PR 생성 후 Codex 리뷰 High 4건(집계 왜곡, 빈 페이지 오판, --allow-skip 버그, 전체 실패 종료코드)을 반영.
-- 커밋/PR: `97d7bfe`(설계 문서)~`db440f4`(리뷰 반영), 14커밋, PR #8 https://github.com/jojo3420/img2txt/pull/8 (base main, 미머지)
-- 결정사항: (1) micro CER은 정규화 길이로 가중. (2) 빈 페이지 판정은 layout.is_empty 기준. (3) 보정 지점은 스펙 7절(LLM 비교) 전까지 backend=None — corrected는 assembled와 동일. (4) levenshtein은 Sequence[T]로 일반화(WER 단어 단위 요구, str 하위 호환).
-- 남은 일: (1) PR #8 머지 (사용자 결정). (2) Codex Medium 5건 follow-up — WER micro화, empty 페이지 중복 카운트, dataset glob 필터, DP 메모리 절감, segments 의미. (3) AI Hub 실제 라벨 어댑터 + 30~50페이지 실측 스모크. (4) 스펙 6절(전처리)/7절(LLM 비교) 별도 플랜.
-- 관련 문서: docs/superpowers/specs/2026-07-13-ocr-llm-quality-harness-design.md, docs/superpowers/plans/2026-07-13-ocr-quality-harness.md, tobyteam/cpr-review-8-20260716-154045.md
+## 2026-07-16 - 품질 측정 하네스(PR #8) + 전처리 실험 인프라(PR #9) 완성
+- 상태: 완료 (두 PR 모두 squash 머지)
+- 완료한 일: (1) OCR 결과를 정답과 비교해 정확도를 숫자(CER 글자 오류율/WER 단어 오류율)로 자동 채점하는 하네스 완성 — 3지점(원시 OCR/조립본/보정본) 측정 CLI. (2) 그 위에 전처리 실험 인프라 완성 — 전처리 레버 3종(대비/2배 확대/기울기 보정), `--min-confidence` 필터, JSONL 실행 메타(재현성), AI Hub 라벨 인스펙션 도구. 두 PR 모두 Codex 외부 리뷰(High 4건+6건)를 반영 후 머지.
+- 커밋/PR: PR #8 → `6357538` 머지, PR #9 → `501cc33` 머지 (https://github.com/jojo3420/img2txt/pull/8, /pull/9). 머지 후 main pytest 196 passed.
+- 결정사항: (1) micro CER은 정규화 길이 가중. (2) 빈 페이지는 layout.is_empty 판정. (3) 보정 지점은 스펙 7절 전까지 backend=None. (4) levenshtein Sequence[T] 일반화. (5) 전처리 설정값 상수 고정 + LEVER_CONFIGS로 메타 기록. (6) deskew는 0도 대비 5% 이상 개선 시만 회전(저신뢰 원본 유지). (7) 전처리본은 run별 uuid 디렉터리로 격리.
+- 남은 일: (1) 🔴 AI Hub dataSetSn=71299 다운로드 — 사용자 계정 필요 → `bench_data/raw/{images,labels}/` 배치 후 실측 사이클 시작. (2) 라벨 어댑터 확정 + baseline 스모크 + 레버 A/B 실측 (후속 플랜). (3) follow-up: WER micro화, EXIF/CMYK 처리, rglob, record_type 전 레코드 등 Medium 이월분. (4) 스펙 7절 LLM 비교 플랜.
+- 관련 문서: docs/superpowers/plans/2026-07-13-ocr-quality-harness.md, docs/superpowers/plans/2026-07-16-ocr-preprocess-infra.md, docs/review/pr-review-9-20260716-221729.md, tobyteam/cpr-review-8-20260716-154045.md
 - 상세 히스토리: 없음
 
 ## 2026-07-12 - 보정 진행률 실시간 표시 수정 (멈춘 것처럼 보이던 문제)
