@@ -96,7 +96,7 @@ class TestRunPoints:
             image_path.unlink(missing_ok=True)
 
     def test_run_points_empty_page(self):
-        """빈 페이지 처리: empty=True, correct_fn 호출 안 함."""
+        """빈 페이지 처리: empty=True (layout.is_empty 기준), correct_fn 호출 안 함."""
         correct_fn_called = []
 
         # 빈 Page 반환
@@ -119,7 +119,9 @@ class TestRunPoints:
                 backend=None,
             )
 
-            assert not outputs.empty  # assembled에 "[페이지 N 누락]"이 있으므로
+            # layout.is_empty 기준이므로 empty=True (assembler의 표식과 무관)
+            assert outputs.empty, "빈 페이지는 empty=True여야 함"
+            # assembled에는 "[페이지 1 누락]" 같은 표식이 있어도 empty=True
             assert len(correct_fn_called) == 0, "빈 페이지에서는 correct_fn이 호출되지 않아야 함"
             assert outputs.assembled == outputs.corrected
             assert outputs.segments == []

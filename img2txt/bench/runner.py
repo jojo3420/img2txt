@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
 from img2txt.assembler import assemble
-from img2txt.bench.normalize import normalize_strict
 from img2txt.layout import analyze_page
 from img2txt.ocr import Page
 
@@ -82,9 +81,9 @@ def run_points(
     else:
         corrected_text = assembled_text
 
-    # 5단계: empty 플래그 판정 (정규화 후 빈 문자열 기준)
-    assembled_normalized_for_empty = normalize_strict(assembled_text)
-    is_empty = not assembled_normalized_for_empty.strip()
+    # 5단계: empty 플래그 판정 (레이아웃 분석 결과 기준)
+    # layout.is_empty는 assembler가 추가한 표식("[페이지 N 누락]" 등)의 영향을 받지 않음
+    is_empty = layout.is_empty
 
     # 6단계: 최종 출력 구성
     segments = [p for p in paragraphs if p.strip()]

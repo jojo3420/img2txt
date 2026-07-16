@@ -90,3 +90,31 @@ def test_cli_integration_basic(tmp_path: Path, monkeypatch) -> None:
         assert record["page_id"] == "page_001", f"page_id 불일치 (라인 {i}): {record['page_id']}"
         expected_points = ["raw", "assembled", "corrected"]
         assert record["point"] in expected_points, f"point 값 불명 (라인 {i}): {record['point']}"
+
+
+def test_cli_all_pages_fail(tmp_path: Path, monkeypatch) -> None:
+    """CLI 전체 실패: 모든 페이지 오류 시 exit 1."""
+    # 임시 디렉터리 설정
+    image_dir = tmp_path / "images"
+    label_dir = tmp_path / "labels"
+    image_dir.mkdir()
+    label_dir.mkdir()
+
+    # 임시 이미지/라벨
+    (image_dir / "page_001.png").touch()
+    (label_dir / "page_001.txt").write_text("정답")
+
+    output_path = tmp_path / "report.jsonl"
+
+    # Mock OCR: 항상 예외 던짐
+    def failing_recognize(image: Path, page_num: int) -> Page:
+        raise RuntimeError("OCR 실패")
+
+    # recognize_page를 교체
+    monkeypatch.setattr("scripts.bench_ocr.recognize_page", failing_recognize)
+
+    # main 호출
+    ret_code = main([str(image_dir), str(label_dir), "-o", str(output_path)])
+
+    # 검증: 모든 페이지 실패했으므로 exit 1
+    assert ret_code == 1, f"main() 반환값이 1이 아님: {ret_code}"

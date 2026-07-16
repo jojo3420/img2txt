@@ -6,6 +6,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from img2txt.bench.normalize import normalize_lenient
+
 logger = logging.getLogger(__name__)
 
 
@@ -68,14 +70,20 @@ def summarize(records: list[PageRecord]) -> dict[str, Any]:
 
     summary["points"] = {}
     for point, point_records in points_dict.items():
-        # Micro CER = 전체 편집거리 합 / 전체 정답 글자 합
-        # (저장된 CER 값을 사용하되, 평균이 아니라 가중치 적용)
-        total_strict = sum(r.cer_strict * len(r.reference_text) for r in point_records)
-        total_lenient = sum(r.cer_lenient * len(r.reference_text) for r in point_records)
-        total_ref_chars = sum(len(r.reference_text) for r in point_records)
+        # Micro CER = 전체 편집거리 합 / 전체 정규화 정답 글자 합
+        # strict: 정규화 기준은 normalized_ref
+        # lenient: 정규화 기준은 normalize_lenient 후 결과
+        total_strict = sum(r.cer_strict * len(r.normalized_ref) for r in point_records)
+        total_ref_chars_strict = sum(len(r.normalized_ref) for r in point_records)
 
-        micro_cer_strict = total_strict / total_ref_chars if total_ref_chars > 0 else 0.0
-        micro_cer_lenient = total_lenient / total_ref_chars if total_ref_chars > 0 else 0.0
+        micro_cer_strict = total_strict / total_ref_chars_strict if total_ref_chars_strict > 0 else 0.0
+
+        # Lenient: reference_text를 normalize_lenient로 변환한 길이 기준
+        lenient_normalized_lengths = [len(normalize_lenient(r.reference_text)) for r in point_records]
+        total_lenient = sum(r.cer_lenient * lenient_len for r, lenient_len in zip(point_records, lenient_normalized_lengths))
+        total_ref_chars_lenient = sum(lenient_normalized_lengths)
+
+        micro_cer_lenient = total_lenient / total_ref_chars_lenient if total_ref_chars_lenient > 0 else 0.0
 
         summary["points"][point] = {
             "cer_strict": micro_cer_strict,

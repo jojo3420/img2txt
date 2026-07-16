@@ -127,6 +127,7 @@ def _create_error_records(pair, start_time: float, error: Exception) -> list[Pag
         PageRecord 리스트 (3개: 모두 오류 상태).
     """
     records: list[PageRecord] = []
+    normalized_ref = normalize_strict(pair.reference_text)
     for point in ["raw", "assembled", "corrected"]:
         elapsed_ms = (time.time() - start_time) * 1000
         record = PageRecord(
@@ -134,7 +135,7 @@ def _create_error_records(pair, start_time: float, error: Exception) -> list[Pag
             point=point,
             reference_text=pair.reference_text,
             output_text="",
-            normalized_ref="",
+            normalized_ref=normalized_ref,
             normalized_output="",
             cer_strict=1.0,
             cer_lenient=1.0,
@@ -202,14 +203,10 @@ def main(argv: list[str] | None = None) -> int:
 
     # 데이터 로드
     try:
-        pairs = load_pairs(args.image_dir, args.label_dir, _default_label_adapter)
+        pairs = load_pairs(args.image_dir, args.label_dir, _default_label_adapter, allow_skip=args.allow_skip)
     except FileNotFoundError as e:
-        if args.allow_skip:
-            logger.warning("라벨 누락: %s (스킵)", e)
-            pairs = []
-        else:
-            logger.error("라벨 누락: %s", e)
-            return 1
+        logger.error("라벨 누락: %s", e)
+        return 1
 
     # 제한 적용
     if args.limit:
@@ -227,6 +224,12 @@ def main(argv: list[str] | None = None) -> int:
         logger.info("처리 중: %s", pair.page_id)
         start_time = time.time()
         records.extend(_score_page(pair, start_time))
+
+    # 전체 페이지가 오류 레코드뿐인지 확인
+    error_records = [r for r in records if r.error_status]
+    if error_records and len(error_records) == len(records):
+        logger.error("모든 페이지 처리 실패")
+        return 1
 
     # 리포트 저장
     write_jsonl(records, args.output)

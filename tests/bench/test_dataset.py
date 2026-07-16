@@ -102,3 +102,30 @@ def test_load_pairs_with_mock_adapter(tmp_path: Path) -> None:
 
     assert len(pairs) == 1
     assert pairs[0].reference_text == "한글 텍스트"
+
+
+def test_load_pairs_allow_skip_true(tmp_path: Path) -> None:
+    """allow_skip=True: 누락 페이지 건너뛰고 나머지 로드."""
+    image_dir = tmp_path / "images"
+    label_dir = tmp_path / "labels"
+    image_dir.mkdir()
+    label_dir.mkdir()
+
+    # 이미지 3개 생성
+    (image_dir / "page_001.png").touch()
+    (image_dir / "page_002.png").touch()  # 라벨 없음
+    (image_dir / "page_003.png").touch()
+
+    # 라벨 2개만 생성 (page_002는 누락)
+    (label_dir / "page_001.txt").write_text("정답1")
+    (label_dir / "page_003.txt").write_text("정답3")
+
+    def label_adapter(label_path: Path) -> str:
+        return label_path.read_text()
+
+    # allow_skip=True로 호출: page_002는 건너뛰고 1, 3만 로드
+    pairs = load_pairs(image_dir, label_dir, label_adapter, allow_skip=True)
+
+    assert len(pairs) == 2
+    assert pairs[0].page_id == "page_001"
+    assert pairs[1].page_id == "page_003"
