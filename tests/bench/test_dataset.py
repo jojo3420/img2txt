@@ -1,4 +1,5 @@
-# tests/bench/test_dataset.py
+from __future__ import annotations
+
 from pathlib import Path
 import pytest
 from img2txt.bench.dataset import PagePair, load_pairs
