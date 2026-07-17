@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Callable
 
 # 프로젝트 모듈
+from img2txt.bench.aihub import aihub_label_adapter
 from img2txt.bench.normalize import normalize_strict, normalize_lenient
 from img2txt.bench.scoring import cer, wer
 from img2txt.bench.dataset import load_pairs, PagePair
@@ -76,6 +77,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=float,
         default=None,
         help="OCR confidence 필터 임계값 (기본: 필터 없음)"
+    )
+    parser.add_argument(
+        "--label-format",
+        choices=["txt", "aihub"],
+        default="txt",
+        help="라벨 형식 (기본 txt: 평문, aihub: 페이지형 공공문서 JSON)"
     )
 
     return parser.parse_args(argv)
@@ -245,7 +252,8 @@ def main(argv: list[str] | None = None) -> int:
 
     # 데이터 로드
     try:
-        pairs = load_pairs(args.image_dir, args.label_dir, _default_label_adapter, allow_skip=args.allow_skip)
+        adapter = aihub_label_adapter if args.label_format == "aihub" else _default_label_adapter
+        pairs = load_pairs(args.image_dir, args.label_dir, adapter, allow_skip=args.allow_skip)
     except FileNotFoundError as e:
         logger.error("라벨 누락: %s", e)
         return 1

@@ -229,3 +229,15 @@ def test_min_confidence_out_of_range(tmp_path: Path) -> None:
     ])
 
     assert ret_code == 1
+
+
+def test_parse_args_label_format() -> None:
+    """--label-format 파싱 + 기본값 txt."""
+    args = parse_args([
+        "/tmp/images", "/tmp/labels", "-o", "/tmp/report.jsonl",
+        "--label-format", "aihub",
+    ])
+    assert args.label_format == "aihub"
+
+    defaults = parse_args(["/tmp/images", "/tmp/labels", "-o", "/tmp/report.jsonl"])
+    assert defaults.label_format == "txt"
