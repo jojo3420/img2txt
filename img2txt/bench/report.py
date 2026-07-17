@@ -168,7 +168,14 @@ def summarize(records: list[PageRecord]) -> dict[str, Any]:
         total_extra = 0
         total_ref_ms = 0
         for r in point_records:
+            # 오류 레코드는 운영 실패(별도 error_status/집계)이므로 품질 micro에서 제외.
+            if r.error_status:
+                continue
             m, e, t = char_multiset_diff(r.normalized_ref, r.normalized_output)
+            # 빈정답(t=0)은 empty_ref 진단으로 별도 포착 — micro 분자/분모 모두 제외해
+            # 페이지 값(0.0)과 요약을 일치시키고 환각 글자 누수를 막는다.
+            if t == 0:
+                continue
             total_miss += m
             total_extra += e
             total_ref_ms += t

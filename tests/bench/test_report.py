@@ -19,7 +19,7 @@ def _rec(point, ref, out, **kw):
         wer=0.0,
         processing_time_ms=0.0,
         empty=kw.get("empty", False),
-        error_status="",
+        error_status=kw.get("error_status", ""),
         char_miss_rate=kw.get("char_miss_rate", 0.0),
         char_extra_rate=kw.get("char_extra_rate", 0.0),
         empty_ref_with_output=kw.get("empty_ref_with_output", False),
@@ -259,6 +259,19 @@ def test_summarize_micro_miss_extra_rate() -> None:
     # micro_extra = 1 / 16
     assert summary["points"]["raw"]["char_miss_rate"] == pytest.approx(1 / 8, abs=1e-6)
     assert summary["points"]["raw"]["char_extra_rate"] == pytest.approx(1 / 16, abs=1e-6)
+
+
+def test_summarize_micro_excludes_error_and_empty_ref() -> None:
+    """오류 레코드와 빈정답(t=0)은 품질 micro에서 제외되어 페이지 값과 일치."""
+    records = [
+        _rec("raw", "가나다라", "가나"),  # 정상: miss 2/4
+        _rec("raw", "정답있음", "", error_status="OCR 실패"),  # 오류 → 제외
+        _rec("raw", "", "환각글자", empty_ref_with_output=True),  # 빈정답 → 제외
+    ]
+    summary = summarize(records)
+    # 정상 페이지만: 놓침 2/4=0.5, 추가 0.0 (빈정답 환각 누수 없음)
+    assert summary["points"]["raw"]["char_miss_rate"] == 0.5
+    assert summary["points"]["raw"]["char_extra_rate"] == 0.0
 
 
 def test_summarize_counts_empty_ref_hallucination() -> None:
