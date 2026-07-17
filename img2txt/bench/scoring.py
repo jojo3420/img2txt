@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from typing import Callable, Sequence, TypeVar
 
 T = TypeVar("T")
@@ -116,3 +117,40 @@ def aggregate_micro(pairs: list[tuple[str, str]]) -> float:
         return 0.0
 
     return total_distance / total_ref_chars
+
+
+def _char_counter(text: str) -> Counter:
+    """모든 공백을 제거한 글자 Counter (multiset 지표용)."""
+    return Counter("".join(text.split()))
+
+
+def char_multiset_diff(reference: str, hypothesis: str) -> tuple[int, int, int]:
+    """공백 제외 글자 multiset 차이.
+
+    Args:
+        reference: 정답 텍스트(정규화 완료 가정).
+        hypothesis: 가설 텍스트(정규화 완료 가정).
+
+    Returns:
+        (miss, extra, ref_total):
+        - miss: 정답 글자 중 가설이 못 낸 초과분 합.
+        - extra: 가설 글자 중 정답에 없는 초과분 합.
+        - ref_total: 정답 글자수(공백 제외).
+    """
+    ref_c = _char_counter(reference)
+    hyp_c = _char_counter(hypothesis)
+    miss = sum(max(0, ref_c[ch] - hyp_c[ch]) for ch in ref_c)
+    extra = sum(max(0, hyp_c[ch] - ref_c[ch]) for ch in hyp_c)
+    return miss, extra, sum(ref_c.values())
+
+
+def char_miss_rate(reference: str, hypothesis: str) -> float:
+    """순서무관 글자 놓침률 = miss / 정답 글자수 (0이면 0.0)."""
+    miss, _, total = char_multiset_diff(reference, hypothesis)
+    return miss / total if total > 0 else 0.0
+
+
+def char_extra_rate(reference: str, hypothesis: str) -> float:
+    """순서무관 글자 추가율 = extra / 정답 글자수 (0이면 0.0)."""
+    _, extra, total = char_multiset_diff(reference, hypothesis)
+    return extra / total if total > 0 else 0.0
