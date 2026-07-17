@@ -262,12 +262,12 @@ def test_summarize_micro_miss_extra_rate() -> None:
 
 
 def test_summarize_counts_empty_ref_hallucination() -> None:
-    """요약: 빈정답 환각 페이지 수."""
+    """요약: 빈정답 환각 페이지 수 (empty_ref_with_output 필드 기반)."""
     records = [
-        _rec("raw", "", "out1"),
+        _rec("raw", "", "out1", empty_ref_with_output=True, empty_ref_extra_chars=4),
         _rec("raw", "", ""),
         _rec("raw", "abc", "xyz"),
     ]
     summary = summarize(records)
-    # empty_ref_with_output count = 1 (첫 번째 레코드만)
+    # empty_ref_with_output=True인 첫 레코드만 카운트
     assert summary["points"]["raw"]["empty_ref_hallucination_count"] == 1
