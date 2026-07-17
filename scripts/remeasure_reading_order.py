@@ -27,11 +27,13 @@ SETS = {
 }
 
 
-def _id_order_join(bbox: list) -> str:
+def _id_order_join(bbox: list[dict]) -> str:
+    """Bbox를 id 오름차순으로 공백 join (before 비교용)."""
     return " ".join(e["data"] for e in sorted(bbox, key=lambda e: e["id"]))
 
 
-def _measure(jsonl: Path, lbl_dir: Path) -> dict:
+def _measure(jsonl: Path, lbl_dir: Path) -> dict[str, float | int]:
+    """캐시 raw 출력 vs id순/읽기순서 정답으로 CER-놓침-추가율 micro 집계."""
     pages = {}
     for line in jsonl.read_text(encoding="utf-8").splitlines():
         if not line.strip():
@@ -54,7 +56,9 @@ def _measure(jsonl: Path, lbl_dir: Path) -> dict:
         d_ro += levenshtein(ref_ro, hyp)
         ref_chars += len(ref_id)
         m, e, t = char_multiset_diff(ref_ro, hyp)
-        miss += m; extra += e; ref_ms += t
+        miss += m
+        extra += e
+        ref_ms += t
         n += 1
     return {
         "n": n,
@@ -66,14 +70,13 @@ def _measure(jsonl: Path, lbl_dir: Path) -> dict:
 
 
 def main() -> None:
-    rows = []
+    """4세트 재측정 수치를 출력."""
     for name, (jsonl, lbl) in SETS.items():
         jp = REPORTS / jsonl
         if not jp.exists():
             print(f"skip {name}: {jp} 없음")
             continue
         res = _measure(jp, LBL_ROOT / lbl)
-        rows.append((name, res))
         print(f"{name} n={res['n']} cer_id={res['cer_id']:.4f} "
               f"cer_ro={res['cer_ro']:.4f} miss={res['miss']:.4f} extra={res['extra']:.4f}")
 
