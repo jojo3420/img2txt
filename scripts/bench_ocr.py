@@ -13,6 +13,9 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Callable
 
+# 직접 실행(python scripts/bench_ocr.py) 시 프로젝트 루트를 import 경로에 추가
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 # 프로젝트 모듈
 from img2txt.bench.aihub import aihub_label_adapter
 from img2txt.bench.normalize import normalize_strict, normalize_lenient
