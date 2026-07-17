@@ -229,3 +229,73 @@ def test_min_confidence_out_of_range(tmp_path: Path) -> None:
     ])
 
     assert ret_code == 1
+
+
+def test_parse_args_label_format() -> None:
+    """--label-format 파싱 + 기본값 txt."""
+    args = parse_args([
+        "/tmp/images", "/tmp/labels", "-o", "/tmp/report.jsonl",
+        "--label-format", "aihub",
+    ])
+    assert args.label_format == "aihub"
+
+    defaults = parse_args(["/tmp/images", "/tmp/labels", "-o", "/tmp/report.jsonl"])
+    assert defaults.label_format == "txt"
+
+
+def test_cli_integration_aihub_label_format(tmp_path: Path, monkeypatch) -> None:
+    """CLI 통합 테스트: AI Hub 라벨 형식 연결."""
+    image_dir = tmp_path / "images"
+    label_dir = tmp_path / "labels"
+    image_dir.mkdir()
+    label_dir.mkdir()
+    output_path = tmp_path / "report.jsonl"
+
+    # 실제 이미지 파일 생성 (PIL Image, test_preprocess_lever_wired 패턴 재사용)
+    from PIL import Image
+    Image.new("L", (40, 30), color=255).save(image_dir / "page_001.png")
+
+    # AI Hub 형식 JSON 라벨
+    aihub_label = {
+        "Annotation": {},
+        "Bbox": [{"data": "정답", "id": 1, "x": [0, 0, 1, 1], "y": [0, 1, 0, 1]}],
+        "Dataset": {},
+        "Images": {},
+    }
+    (label_dir / "page_001.json").write_text(
+        json.dumps(aihub_label, ensure_ascii=False), encoding="utf-8"
+    )
+
+    # Mock OCR
+    def fake_recognize(image: Path, page_num: int) -> Page:
+        return Page(
+            number=page_num,
+            lines=[
+                OcrLine(text="출력", confidence=0.9, x=0.1, y=0.9, width=0.8, height=0.03),
+            ],
+        )
+
+    monkeypatch.setattr("scripts.bench_ocr.recognize_page", fake_recognize)
+
+    # main 호출
+    ret_code = main([
+        str(image_dir), str(label_dir), "-o", str(output_path),
+        "--label-format", "aihub",
+    ])
+
+    # 검증
+    assert ret_code == 0, f"main() 반환값이 0이 아님: {ret_code}"
+    assert output_path.exists(), f"리포트 파일이 없음: {output_path}"
+
+    # JSONL 파일 검증
+    lines = output_path.read_text(encoding="utf-8").strip().split("\n")
+    # 메타 + 3개 데이터 레코드 (raw, assembled, corrected)
+    assert len(lines) == 4, f"레코드 수가 4이 아님: {len(lines)}"
+
+    # 나머지 3개는 데이터 레코드
+    data_records = [json.loads(line) for line in lines[1:]]
+
+    # raw 레코드에서 reference_text == "정답" 검증
+    raw_record = next(r for r in data_records if r["point"] == "raw")
+    assert raw_record["reference_text"] == "정답", \
+        f"reference_text 불일치: {raw_record['reference_text']}"
