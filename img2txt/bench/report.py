@@ -177,7 +177,7 @@ def summarize(records: list[PageRecord]) -> dict[str, Any]:
         micro_extra = total_extra / total_ref_ms if total_ref_ms > 0 else 0.0
 
         # 빈정답 환각 페이지 수
-        empty_ref_hallucination = sum(1 for r in point_records if len(r.normalized_ref) == 0 and len(r.normalized_output) > 0)
+        empty_ref_hallucination = sum(1 for r in point_records if r.empty_ref_with_output)
 
         summary["points"][point] = {
             "cer_strict": micro_cer_strict,
