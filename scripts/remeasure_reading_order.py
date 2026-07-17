@@ -56,6 +56,9 @@ def _measure(jsonl: Path, lbl_dir: Path) -> dict[str, float | int]:
         d_ro += levenshtein(ref_ro, hyp)
         ref_chars += len(ref_id)
         m, e, t = char_multiset_diff(ref_ro, hyp)
+        if t == 0:  # 빈정답은 micro 놓침/추가에서 제외 (report.summarize와 동일 정책)
+            n += 1
+            continue
         miss += m
         extra += e
         ref_ms += t
