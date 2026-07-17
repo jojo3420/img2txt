@@ -10,9 +10,18 @@
 - LLM 오탈자 보정 (codex/claude/ollama 백엔드, 배치 처리 + 실시간 진행률)
 - 브라우저 업로드 → 텍스트 다운로드 개인용 웹서비스 (FastAPI 단일 포트)
 - 입력 포맷 JPEG/PNG/WEBP/TIFF 지원
-- OCR 정확도 자동 측정 도구 (`scripts/bench_ocr.py` — 정답 대비 글자/단어 오류율 CER/WER 채점, JSONL 리포트)
+- OCR 정확도 자동 측정 도구 (`scripts/bench_ocr.py` — 어순에 안 흔들리는 놓침률 주지표 + 읽기순서 CER/WER + 환각 진단, JSONL 리포트)
 
 ## 진행 기록
+
+## 2026-07-18 - 읽기순서 인식 채점 지표로 교체 (PR #14, 이슈 #11 해결)
+- 상태: 완료 (PR #14 squash 머지 `75688d9`)
+- 완료한 일: 어순 때문에 OCR 품질을 과대측정하던 CER 지표를, 순서무관 놓침률(정답 글자 중 못 읽은 비율, 품질 하한 게이트) + 읽기순서 CER(부작용 감시) + 추가율(환각 진단) 병행으로 교체. AI Hub 라벨을 단어 id순이 아니라 좌표 읽기순서(위→아래, 행 내 좌→우)로 복원. 캐시된 OCR 출력 재측정으로 진짜 품질이 드러남 - 2010 CER 17.4%였지만 실제 놓침 0.98%, b1980 53.2% → 17.8%(전 4세트 읽기순서 CER < id순 CER).
+- 커밋/PR: PR #14 https://github.com/jojo3420/img2txt/pull/14 (구현 13커밋 + Codex 리뷰 후 fix 3커밋), 머지 후 main pytest 91 passed. 이슈 #11 CLOSED.
+- 결정사항: (1) 두 지표 병행 - 놓침률=절대 품질 하한, 읽기순서 CER 델타=순서/문장성 부작용 감시(랭킹 축 아님, 랭킹은 기존 비용→속도 유지). (2) summarize 품질 micro 집계에서 오류 레코드(운영 실패)와 빈정답 페이지(t=0)를 제외해 페이지별 값과 요약을 일치시킴(Codex Must-fix 2건 반영). 헤드라인 수치는 무손상. (3) 정답 생성 어댑터 한 곳만 읽기순서로 바꿔 CER 계산 코드는 불변.
+- 남은 일: (1) 🔴 이슈 #12 AI Hub 데이터 외부 LLM 전송 컴플라이언스 확인 - LLM 실측 하드 게이트. (2) 스펙 7절 LLM 보정 가성비 비교 플랜(새 세션) - 이번 지표 교체로 블로커 해소됨. (3) 비긴급: suspicious_layout_flag 다열 탐지 강화, metric_schema_version 도입, JPEG 재압축 교란 수정(#13).
+- 관련 문서: docs/superpowers/specs/2026-07-17-reading-order-metric-design.md, docs/superpowers/plans/2026-07-17-reading-order-metric.md, docs/bench/2026-07-17-reading-order-metric.md, docs/review/pr-review-14-20260718-004413.md
+- 상세 히스토리: 없음
 
 ## 2026-07-17 - 하네스 첫 실가동: AI Hub 실측 + 전처리 판정 (PR #10)
 - 상태: 완료 (PR #10 squash 머지 `eb0fe00`)
