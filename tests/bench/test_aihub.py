@@ -19,15 +19,17 @@ def _write_label(path: Path, bbox: list[dict]) -> None:
 
 
 def test_adapter_reads_top_to_bottom_left_to_right(tmp_path: Path) -> None:
-    """Bbox를 좌표 읽기순서(위→아래, 행 내 좌→우)로 복원한다."""
+    """id 순서와 무관하게 좌표 읽기순서(위→아래, 행 내 좌→우)로 join."""
     label = tmp_path / "AF_TEST_0001.json"
+    # 윗줄(y~0): '창원은'(x=0) '우리의'(x=100) / 아랫줄(y~100): '자랑'(x=0)
+    # id는 읽기순서와 어긋나게 부여
     _write_label(label, [
-        {"data": "우리의", "id": 99, "x": [0, 0, 1, 1], "y": [0, 1, 0, 1]},
-        {"data": "창원은", "id": 88, "x": [0, 0, 1, 1], "y": [0, 1, 0, 1]},
-        {"data": "자랑", "id": 77, "x": [0, 0, 1, 1], "y": [0, 1, 0, 1]},
+        {"data": "자랑", "id": 1, "x": [0, 0, 90, 90], "y": [100, 150, 100, 150]},
+        {"data": "우리의", "id": 2, "x": [100, 100, 190, 190], "y": [0, 50, 0, 50]},
+        {"data": "창원은", "id": 3, "x": [0, 0, 90, 90], "y": [0, 50, 0, 50]},
     ])
 
-    assert aihub_label_adapter(label) == "우리의 창원은 자랑"
+    assert aihub_label_adapter(label) == "창원은 우리의 자랑"
 
 
 def test_adapter_empty_bbox_returns_empty(tmp_path: Path) -> None:
