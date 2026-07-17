@@ -127,7 +127,7 @@
 리포트는 재현 가능하도록 페이지별 레코드를 구조화 형식(JSON Lines 또는 CSV)으로 남긴다. 최소 필드:
 
 - 실행 메타: run_id, 데이터셋 식별자와 해시, macOS/ocrmac/codex CLI 버전, 프롬프트 버전, 모델 식별자, 전처리 설정, 실행 시각.
-- 페이지 레코드: page_id, 측정 지점(raw/assembled/corrected), 정답 텍스트, 원문 출력, 정규화 출력, CER(엄격/관대), WER, 처리 시간(ms), 빈 결과 플래그, 오류 상태. 신규 필드: char_miss_rate(글자 놓침률), char_extra_rate(글자 추가율), reading_order_cer(좌표 읽기순서 기반 CER, 부작용 감시용), empty_ref_with_output(정답 공백이면서 OCR 출력 있음 플래그), empty_ref_extra_chars(정답 공백이면서 OCR이 낸 글자 수). 읽기순서 메타: reading_order_meta(dict: bbox_count 입력 bbox 개수, row_count 행 분류 결과, median_height 중앙 높이, suspicious_layout_flag 의심 레이아웃 여부).
+- 페이지 레코드: page_id, 측정 지점(raw/assembled/corrected), 정답 텍스트, 원문 출력, 정규화 출력, CER(엄격/관대) — 엄격 CER은 정답이 좌표 읽기순서 join으로 바뀌어 곧 읽기순서 CER(부작용 감시용, 별도 필드 아님), WER, 처리 시간(ms), 빈 결과 플래그, 오류 상태. 신규 필드: char_miss_rate(글자 놓침률), char_extra_rate(글자 추가율), empty_ref_with_output(정답 공백이면서 OCR 출력 있음 플래그), empty_ref_extra_chars(정답 공백이면서 OCR이 낸 글자 수). 읽기순서 메타: reading_order_meta(dict: bbox_count 입력 bbox 개수, row_count 행 분류 결과, median_height 중앙 높이, suspicious_layout_flag 의심 레이아웃 여부).
 - 요약: 지점별 micro CER/WER/char_miss_rate/char_extra_rate, empty_ref_hallucination_count(정답 공백이면서 OCR 환각 낸 건수), 악화 페이지 비율 등 부작용 지표(7.2), 실패율.
 
 ## 6. (1) OCR 전처리 실험 설계
