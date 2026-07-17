@@ -129,3 +129,31 @@ def test_load_pairs_allow_skip_true(tmp_path: Path) -> None:
     assert len(pairs) == 2
     assert pairs[0].page_id == "page_001"
     assert pairs[1].page_id == "page_003"
+
+
+def test_load_pairs_populates_reading_order_meta(tmp_path: Path) -> None:
+    """meta_adapter 지정 시 PagePair.reading_order_meta 채움."""
+    img_dir = tmp_path / "img"; img_dir.mkdir()
+    lbl_dir = tmp_path / "lbl"; lbl_dir.mkdir()
+    (img_dir / "p1.jpg").write_bytes(b"x")
+    (lbl_dir / "p1.txt").write_text("정답", encoding="utf-8")
+
+    from img2txt.bench.dataset import load_pairs
+    pairs = load_pairs(
+        img_dir, lbl_dir,
+        adapter=lambda p: p.read_text(encoding="utf-8"),
+        meta_adapter=lambda p: {"bbox_count": 3, "suspicious_layout_flag": False},
+    )
+    assert pairs[0].reading_order_meta == {"bbox_count": 3, "suspicious_layout_flag": False}
+
+
+def test_load_pairs_default_meta_empty(tmp_path: Path) -> None:
+    """meta_adapter 미지정 시 reading_order_meta는 빈 dict."""
+    img_dir = tmp_path / "img"; img_dir.mkdir()
+    lbl_dir = tmp_path / "lbl"; lbl_dir.mkdir()
+    (img_dir / "p1.jpg").write_bytes(b"x")
+    (lbl_dir / "p1.txt").write_text("정답", encoding="utf-8")
+
+    from img2txt.bench.dataset import load_pairs
+    pairs = load_pairs(img_dir, lbl_dir, adapter=lambda p: p.read_text(encoding="utf-8"))
+    assert pairs[0].reading_order_meta == {}
