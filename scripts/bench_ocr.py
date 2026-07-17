@@ -14,7 +14,9 @@ from pathlib import Path
 from typing import Callable
 
 # 직접 실행(python scripts/bench_ocr.py) 시 프로젝트 루트를 import 경로에 추가
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+_project_root = str(Path(__file__).resolve().parent.parent)
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
 
 # 프로젝트 모듈
 from img2txt.bench.aihub import aihub_label_adapter
