@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from img2txt.bench.aihub import aihub_label_adapter
+from img2txt.bench.aihub import aihub_label_adapter, reading_order_diagnostics
 
 
 def _write_label(path: Path, bbox: list[dict]) -> None:
@@ -18,16 +18,16 @@ def _write_label(path: Path, bbox: list[dict]) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
 
-def test_adapter_joins_words_in_id_order(tmp_path: Path) -> None:
-    """Bbox를 id 오름차순으로 공백 join한다 (원본 순서가 뒤섞여도)."""
+def test_adapter_reads_top_to_bottom_left_to_right(tmp_path: Path) -> None:
+    """Bbox를 좌표 읽기순서(위→아래, 행 내 좌→우)로 복원한다."""
     label = tmp_path / "AF_TEST_0001.json"
     _write_label(label, [
-        {"data": "우리의", "id": 2, "x": [0, 0, 1, 1], "y": [0, 1, 0, 1]},
-        {"data": "창원은", "id": 1, "x": [0, 0, 1, 1], "y": [0, 1, 0, 1]},
-        {"data": "자랑", "id": 3, "x": [0, 0, 1, 1], "y": [0, 1, 0, 1]},
+        {"data": "우리의", "id": 99, "x": [0, 0, 1, 1], "y": [0, 1, 0, 1]},
+        {"data": "창원은", "id": 88, "x": [0, 0, 1, 1], "y": [0, 1, 0, 1]},
+        {"data": "자랑", "id": 77, "x": [0, 0, 1, 1], "y": [0, 1, 0, 1]},
     ])
 
-    assert aihub_label_adapter(label) == "창원은 우리의 자랑"
+    assert aihub_label_adapter(label) == "우리의 창원은 자랑"
 
 
 def test_adapter_empty_bbox_returns_empty(tmp_path: Path) -> None:
@@ -75,3 +75,39 @@ def test_adapter_malformed_bbox_raises(
 
     with pytest.raises(error_type):
         aihub_label_adapter(label)
+
+
+def test_adapter_missing_xy_raises(tmp_path: Path) -> None:
+    """entry에 x 또는 y 좌표가 없으면 ValueError."""
+    label = tmp_path / "missing_xy.json"
+    _write_label(label, [
+        {"data": "텍스트", "id": 1, "x": [0, 0, 1, 1]},
+    ])
+
+    with pytest.raises(ValueError, match="entry에.*y.*누락"):
+        aihub_label_adapter(label)
+
+
+def test_adapter_xy_length_mismatch_raises(tmp_path: Path) -> None:
+    """x와 y 길이가 다르면 ValueError."""
+    label = tmp_path / "xy_mismatch.json"
+    _write_label(label, [
+        {"data": "텍스트", "id": 1, "x": [0, 0, 1], "y": [0, 1, 0, 1]},
+    ])
+
+    with pytest.raises(ValueError, match="x/y 길이 불일치"):
+        aihub_label_adapter(label)
+
+
+def test_diagnostics_flags_over_merged_layout(tmp_path: Path) -> None:
+    """단어 다수가 극소수 행으로 뭉치면 suspicious_layout_flag=True."""
+    label = tmp_path / "AF_TEST_DIAG.json"
+    # 12개 단어가 전부 같은 y (한 행) → row_count<=2, bbox_count>=12
+    bbox = [
+        {"data": f"w{i}", "id": i, "x": [i * 10, i * 10, i * 10 + 5, i * 10 + 5], "y": [0, 10, 0, 10]}
+        for i in range(1, 13)
+    ]
+    _write_label(label, bbox)
+    diag = reading_order_diagnostics(label)
+    assert diag["bbox_count"] == 12
+    assert diag["suspicious_layout_flag"] is True
