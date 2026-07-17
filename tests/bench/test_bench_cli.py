@@ -4,11 +4,38 @@ from pathlib import Path
 import pytest
 import sys
 import json
+import time as _t
 
 # scripts/bench_ocr.py의 main/argparse를 테스트하기 위해
 # 별도 함수로 분리했다고 가정
-from scripts.bench_ocr import parse_args, main
+from scripts.bench_ocr import parse_args, main, _score_outputs
 from img2txt.ocr import OcrLine, Page
+from img2txt.bench.dataset import PagePair
+from img2txt.bench.runner import PointOutputs
+
+
+def test_score_outputs_fills_metrics_and_empty_ref_diag() -> None:
+    """_score_outputs: 놓침률/추가율/빈정답 진단/읽기순서 메타 채우기."""
+    pair = PagePair(
+        page_id="p1",
+        image_path=Path("x.jpg"),
+        reference_text="",
+        reading_order_meta={"bbox_count": 0},
+    )
+    outputs = PointOutputs(
+        page_id="p1",
+        raw="환각",
+        assembled="환각",
+        corrected="환각",
+        segments=["환각"],
+        empty=False,
+    )
+    start_time = _t.time()
+    recs = _score_outputs(pair, outputs, start_time)
+    raw = next(r for r in recs if r.point == "raw")
+    assert raw.empty_ref_with_output is True
+    assert raw.empty_ref_extra_chars == 2
+    assert raw.reading_order_meta == {"bbox_count": 0}
 
 
 def test_parse_args_basic() -> None:

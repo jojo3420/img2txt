@@ -19,9 +19,9 @@ if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
 # 프로젝트 모듈
-from img2txt.bench.aihub import aihub_label_adapter
+from img2txt.bench.aihub import aihub_label_adapter, reading_order_diagnostics
 from img2txt.bench.normalize import normalize_strict, normalize_lenient
-from img2txt.bench.scoring import cer, wer
+from img2txt.bench.scoring import cer, wer, char_miss_rate, char_extra_rate
 from img2txt.bench.dataset import load_pairs, PagePair
 from img2txt.bench.runner import run_points, RecognizeFn
 from img2txt.bench.report import PageRecord, write_jsonl, summarize, build_run_meta
@@ -137,6 +137,13 @@ def _score_outputs(pair, outputs, start_time: float) -> list[PageRecord]:
         )
         wer_score = wer(normalized_ref, normalized_output)
 
+        miss_rate = char_miss_rate(normalized_ref, normalized_output)
+        extra_rate = char_extra_rate(normalized_ref, normalized_output)
+        ref_no_ws = "".join(normalized_ref.split())
+        out_no_ws = "".join(normalized_output.split())
+        empty_ref_with_output = len(ref_no_ws) == 0 and len(out_no_ws) > 0
+        empty_ref_extra_chars = len(out_no_ws) if empty_ref_with_output else 0
+
         elapsed_ms = (time.time() - start_time) * 1000
 
         record = PageRecord(
@@ -152,6 +159,11 @@ def _score_outputs(pair, outputs, start_time: float) -> list[PageRecord]:
             processing_time_ms=elapsed_ms,
             empty=outputs.empty,
             error_status="",
+            char_miss_rate=miss_rate,
+            char_extra_rate=extra_rate,
+            empty_ref_with_output=empty_ref_with_output,
+            empty_ref_extra_chars=empty_ref_extra_chars,
+            reading_order_meta=pair.reading_order_meta,
         )
         records.append(record)
     return records
@@ -185,6 +197,11 @@ def _create_error_records(pair, start_time: float, error: Exception) -> list[Pag
             processing_time_ms=elapsed_ms,
             empty=False,
             error_status=str(error),
+            char_miss_rate=0.0,
+            char_extra_rate=0.0,
+            empty_ref_with_output=False,
+            empty_ref_extra_chars=0,
+            reading_order_meta=pair.reading_order_meta,
         )
         records.append(record)
     return records
@@ -258,7 +275,11 @@ def main(argv: list[str] | None = None) -> int:
     # 데이터 로드
     try:
         adapter = aihub_label_adapter if args.label_format == "aihub" else _default_label_adapter
-        pairs = load_pairs(args.image_dir, args.label_dir, adapter, allow_skip=args.allow_skip)
+        meta_adapter = reading_order_diagnostics if args.label_format == "aihub" else None
+        pairs = load_pairs(
+            args.image_dir, args.label_dir, adapter,
+            allow_skip=args.allow_skip, meta_adapter=meta_adapter,
+        )
     except FileNotFoundError as e:
         logger.error("라벨 누락: %s", e)
         return 1

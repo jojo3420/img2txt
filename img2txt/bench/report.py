@@ -5,7 +5,7 @@ import importlib.metadata
 import json
 import logging
 import platform
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -13,6 +13,7 @@ from typing import Any
 from img2txt.bench.normalize import normalize_lenient
 from img2txt.bench.dataset import PagePair
 from img2txt.bench.preprocess import LEVER_CONFIGS
+from img2txt.bench.scoring import char_multiset_diff
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,11 @@ class PageRecord:
     processing_time_ms: float
     empty: bool
     error_status: str           # 오류 메시지 (정상이면 "")
+    char_miss_rate: float = 0.0
+    char_extra_rate: float = 0.0
+    empty_ref_with_output: bool = False
+    empty_ref_extra_chars: int = 0
+    reading_order_meta: dict = field(default_factory=dict)
 
 
 def build_run_meta(
@@ -157,11 +163,37 @@ def summarize(records: list[PageRecord]) -> dict[str, Any]:
 
         micro_cer_lenient = total_lenient / total_ref_chars_lenient if total_ref_chars_lenient > 0 else 0.0
 
+        # Micro miss/extra rate (문자 multiset 기준)
+        total_miss = 0
+        total_extra = 0
+        total_ref_ms = 0
+        for r in point_records:
+            # 오류 레코드는 운영 실패(별도 error_status/집계)이므로 품질 micro에서 제외.
+            if r.error_status:
+                continue
+            m, e, t = char_multiset_diff(r.normalized_ref, r.normalized_output)
+            # 빈정답(t=0)은 empty_ref 진단으로 별도 포착 — micro 분자/분모 모두 제외해
+            # 페이지 값(0.0)과 요약을 일치시키고 환각 글자 누수를 막는다.
+            if t == 0:
+                continue
+            total_miss += m
+            total_extra += e
+            total_ref_ms += t
+
+        micro_miss = total_miss / total_ref_ms if total_ref_ms > 0 else 0.0
+        micro_extra = total_extra / total_ref_ms if total_ref_ms > 0 else 0.0
+
+        # 빈정답 환각 페이지 수
+        empty_ref_hallucination = sum(1 for r in point_records if r.empty_ref_with_output)
+
         summary["points"][point] = {
             "cer_strict": micro_cer_strict,
             "cer_lenient": micro_cer_lenient,
             "wer": sum(r.wer for r in point_records) / len(point_records) if point_records else 0.0,
             "count": len(point_records),
+            "char_miss_rate": micro_miss,
+            "char_extra_rate": micro_extra,
+            "empty_ref_hallucination_count": empty_ref_hallucination,
         }
 
     # 빈 결과 페이지

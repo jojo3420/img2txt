@@ -108,3 +108,37 @@ def test_aggregate_micro_with_empty_hypothesis() -> None:
     result = aggregate_micro(pairs)
     # (5+0)/(5+5) = 5/10 = 0.5
     assert abs(result - 0.5) < 0.001
+
+from img2txt.bench.scoring import (
+    char_multiset_diff,
+    char_miss_rate,
+    char_extra_rate,
+)
+
+
+def test_char_multiset_diff_perfect_match():
+    # 완전 일치: miss=0, extra=0, 공백 제외 글자수=4
+    assert char_multiset_diff("가 나 다 라", "라다 나가") == (0, 0, 4)
+
+
+def test_char_miss_rate_partial_miss():
+    # 정답 4글자 중 '라' 누락 → 1/4
+    assert char_miss_rate("가나다라", "가나다") == 0.25
+
+
+def test_char_extra_rate_hallucination():
+    # 정답에 없는 '마' 2개 초과 → 2/4
+    assert char_extra_rate("가나다라", "가나다라마마") == 0.5
+
+
+def test_char_rates_order_independent():
+    # 순서만 다르면 놓침/추가 모두 0
+    assert char_miss_rate("가나다", "다나가") == 0.0
+    assert char_extra_rate("가나다", "다나가") == 0.0
+
+
+def test_char_rates_empty_reference_returns_zero():
+    # 정답이 비면 분모 0 → rate 0.0 (빈정답 진단은 호출부에서 별도 처리)
+    assert char_miss_rate("", "가나") == 0.0
+    assert char_extra_rate("", "가나") == 0.0
+    assert char_multiset_diff("", "가나") == (0, 2, 0)

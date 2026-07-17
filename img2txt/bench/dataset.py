@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
@@ -15,6 +15,7 @@ class PagePair:
     page_id: str
     image_path: Path
     reference_text: str
+    reading_order_meta: dict = field(default_factory=dict)
 
 
 def load_pairs(
@@ -22,6 +23,7 @@ def load_pairs(
     label_dir: Path,
     adapter: Callable[[Path], str],
     allow_skip: bool = False,
+    meta_adapter: Callable[[Path], dict] | None = None,
 ) -> list[PagePair]:
     """이미지 디렉터리와 라벨 디렉터리를 매칭해 PagePair 리스트 반환.
 
@@ -31,6 +33,7 @@ def load_pairs(
         adapter: 라벨 파일 경로 → 정답 텍스트 함수.
         allow_skip: True면 라벨 누락 페이지만 건너뛰고 나머지 로드,
                    False면 첫 누락 시 FileNotFoundError (기본).
+        meta_adapter: 라벨 파일 경로 → 진단 메타 dict 함수 (선택).
 
     Returns:
         매칭된 PagePair 리스트 (page_id 정렬).
@@ -62,11 +65,13 @@ def load_pairs(
 
         # 어댑터로 라벨 읽기
         reference_text = adapter(label_path)
+        meta = meta_adapter(label_path) if meta_adapter else {}
 
         pair = PagePair(
             page_id=page_id,
             image_path=image_path,
             reference_text=reference_text,
+            reading_order_meta=meta,
         )
         pairs.append(pair)
 
